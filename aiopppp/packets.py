@@ -46,22 +46,39 @@ class DrwPkt(Packet):
         self._cmd_idx = cmd_idx
         self._payload = drw_payload
 
+    def get_drw_payload(self):
+        return self._payload
+
     def get_payload(self):
-        return struct.pack('>BBH', 0xd1, self._channel, self._cmd_idx) + self._payload
+        return struct.pack('>BBH', 0xd1, self._channel, self._cmd_idx) + self.get_drw_payload()
+
+    def drw_str(self):
+        return f'chn:{self._channel}, idc: {self._cmd_idx}'
+
+    def __str__(self):
+        return f'{self.type.name}({self.drw_str()}): [{self._payload.hex(" ")}]'
 
 
 class JsonCmdPkt(DrwPkt):
-    def __init__(self, cmd_idx, json_payload):
-        payload = json.dumps(json_payload).encode('utf-8')
-        super().__init__(
-            0,
-            cmd_idx,
-            b'\x06\x0a\xa0\x80' + len(payload).to_bytes(4, 'little') + payload,
-        )
+    def __init__(self, cmd_idx, json_payload, preamble=b'\x06\x0a\xa0\x80'):
+        super().__init__(0, cmd_idx, None)
+        self.json_payload = json_payload
+        self.preamble = preamble
+
+    def __str__(self):
+        return f'{self.type.name}({self.drw_str()}): [{hex(self.preamble[3])}, {self.json_payload}]'
+
+    def get_drw_payload(self):
+        payload = json.dumps(self.json_payload).encode('utf-8')
+        return self.preamble + len(payload).to_bytes(4, 'little') + payload
 
 
 def parse_punch_pkt(data):
     return PunchPkt(PacketType.PunchPkt, data)
+
+
+def parse_p2prdy_pkt(data):
+    return PunchPkt(PacketType.P2pRdy, data)
 
 
 def make_punch_pkt(dev_id):
@@ -77,6 +94,8 @@ def make_punch_pkt(dev_id):
 
 def parse_drw_pkt(data):
     channel, cmd_idx = struct.unpack('>xBH', data[:4])
+    if data[4:6] == b'\x06\x0a':
+        return JsonCmdPkt(cmd_idx, json.loads(data[12:]), preamble=data[4:8])
     return DrwPkt(channel, cmd_idx, data[4:])
 
 
@@ -97,7 +116,7 @@ def create_drw(session, user, data):
 
 PARSERS = {
     PacketType.PunchPkt: (PunchPkt, parse_punch_pkt),
-    PacketType.P2pRdy: (PunchPkt, parse_punch_pkt),
+    PacketType.P2pRdy: (PunchPkt, parse_p2prdy_pkt),
     PacketType.Drw: (DrwPkt, parse_drw_pkt),
 }
 
