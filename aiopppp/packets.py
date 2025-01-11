@@ -2,7 +2,7 @@ import json
 import struct
 
 from .const import CAM_MAGIC, PacketType
-from .types import DeviceID
+from .types import Channel, DeviceID
 
 
 class Packet:
@@ -42,7 +42,7 @@ class PunchPkt(Packet):
 class DrwPkt(Packet):
     def __init__(self, channel, cmd_idx, drw_payload):
         super().__init__(PacketType.Drw, None)
-        self._channel = channel
+        self._channel = Channel(channel)
         self._cmd_idx = cmd_idx
         self._payload = drw_payload
 
@@ -50,10 +50,10 @@ class DrwPkt(Packet):
         return self._payload
 
     def get_payload(self):
-        return struct.pack('>BBH', 0xd1, self._channel, self._cmd_idx) + self.get_drw_payload()
+        return struct.pack('>BBH', 0xd1, self._channel.value, self._cmd_idx) + self.get_drw_payload()
 
     def drw_str(self):
-        return f'chn:{self._channel}, idc: {self._cmd_idx}'
+        return f'chn:{self._channel.name}, idx: {self._cmd_idx}'
 
     def __str__(self):
         return f'{self.type.name}({self.drw_str()}): [{self._payload.hex(" ")}]'
@@ -66,7 +66,7 @@ class JsonCmdPkt(DrwPkt):
         self.preamble = preamble
 
     def __str__(self):
-        return f'{self.type.name}({self.drw_str()}): [{hex(self.preamble[3])}, {self.json_payload}]'
+        return f'{self.type.name}({self.drw_str()}): [{hex(self.preamble[2])}, {self.json_payload}]'
 
     def get_drw_payload(self):
         payload = json.dumps(self.json_payload).encode('utf-8')
@@ -102,7 +102,7 @@ def parse_drw_pkt(data):
 def make_drw_ack_pkt(drw_pkt):
     return Packet(
         PacketType.DrwAck,
-        struct.pack('>BBHH', 0xd1, drw_pkt._channel, 1, drw_pkt._cmd_idx)
+        struct.pack('>BBHH', 0xd1, drw_pkt._channel.value, 1, drw_pkt._cmd_idx)
     )
 
 

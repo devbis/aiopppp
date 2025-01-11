@@ -1,6 +1,5 @@
 from enum import Enum
 
-
 CAM_MAGIC = 0xf1
 
 

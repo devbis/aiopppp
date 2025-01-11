@@ -1,9 +1,16 @@
 import asyncio
 import logging
 
-from .const import PacketType, JSON_COMMAND_NAMES, JsonCommands
+from .const import JSON_COMMAND_NAMES, JsonCommands, PacketType
 from .encrypt import ENC_METHODS
-from .packets import make_punch_pkt, parse_packet, make_p2palive_ack_pkt, JsonCmdPkt, Packet, make_drw_ack_pkt
+from .packets import (
+    JsonCmdPkt,
+    make_drw_ack_pkt,
+    make_p2palive_ack_pkt,
+    make_punch_pkt,
+    parse_packet,
+)
+from .types import Channel, VideoFrame
 
 logger = logging.getLogger(__name__)
 
@@ -22,28 +29,127 @@ class SessionUDPProtocol(asyncio.DatagramProtocol):
 
 class PacketQueueMixin:
     def __init__(self, *args, **kwargs):
-        self.queue = asyncio.Queue()
-        self.process_task = None
+        super().__init__()
+        self.packet_queue = asyncio.Queue()
+        self.process_packet_task = None
 
-    async def process_queue(self):
+    async def process_packet_queue(self):
         while True:
-            pkt = await self.queue.get()
+            pkt = await self.packet_queue.get()
             await self.handle_incoming_packet(pkt)
 
-    def start_queue(self):
-        self.process_task = asyncio.create_task(self.process_queue())
+    def start_packet_queue(self):
+        self.process_packet_task = asyncio.create_task(self.process_packet_queue())
 
     async def handle_incoming_packet(self, pkt):
         raise NotImplementedError
 
 
-class Session(PacketQueueMixin):
+class VideoQueueMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.video_chunk_queue = asyncio.Queue()
+        self.frame_queue = asyncio.Queue()
+        self.process_video_task = None
+
+        self.video_received = {}
+        self.video_boundaries = set()
+        self.last_video_frame = -1
+
+    async def process_video_queue(self):
+        while True:
+            pkt = await self.video_chunk_queue.get()
+            await self.handle_incoming_video_packet(pkt)
+
+    def start_video_queue(self):
+        self.process_video_task = asyncio.create_task(self.process_video_queue())
+
+    async def handle_incoming_video_packet(self, pkt):
+        raise NotImplementedError
+
+    async def process_video_frame(self):
+        if len(self.video_boundaries) <= 1:
+            return
+        frame_starts = sorted(list(self.video_boundaries))
+        index = frame_starts[-2]
+        last_index = frame_starts[-1]
+
+        if index == self.last_video_frame:
+            return
+
+        complete = True
+        out = []
+        completeness = ''
+        for i in range(index, last_index):
+            if self.video_received.get(i) is not None:
+                out.append(self.video_received[i])
+                completeness += 'x'
+            else:
+                complete = False
+                completeness += '_'
+        logger.info(f"------- completeness: {completeness}")
+
+        if complete:
+            self.last_video_frame = index
+            self.frame_queue.put_nowait(VideoFrame(idx=index, data=b''.join(out)))
+            # await self.emit('videoFrame', frame=b''.join(out), packetIndex=index)
+
+            for idx in self.video_received.keys():
+                if idx < index:
+                    del self.video_received[idx]
+
+
+    # if (this.videoBoundaries.size <= 1) {
+    #   return
+    # }
+    # let array = Array.from(this.videoBoundaries).sort((a, b) => a - b)
+    # let index = array[array.length - 2]
+    # let lastIndex = array[array.length - 1]
+    #
+    # if (index == this.lastVideoFrame) {
+    #   return
+    # }
+    #
+    # let complete = true
+    # let out = []
+    # let completeness = ''
+    # for (let i = index; i < lastIndex; i++) {
+    #   if (this.videoReceived[i] !== undefined) {
+    #     out.push(this.videoReceived[i])
+    #     completeness += 'x'
+    #   } else {
+    #     complete = false
+    #     completeness += '_'
+    #   }
+    # }
+    #
+    # // console.log(completeness)
+    # if (complete) {
+    #   /*console.log(
+    #     `------------>>>>>> GOT VIDEO FRAME FROM ${index} to ${lastIndex}`
+    #   )
+    #   */
+    #   this.lastVideoFrame = index
+    #   this.emit('videoFrame', { frame: Buffer.concat(out), packetIndex: index })
+    #
+    #   //free ram where videoRecieved[<index]
+    #   for (let i = 0; i < index; i++) {
+    #     this.videoReceived[i] = undefined
+    #   }
+    # }
+
+
+class Session(PacketQueueMixin, VideoQueueMixin):
     def __init__(self, dev, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dev = dev
+        self.outgoing_command_idx = 0
         self.transport = None
         self.ready_counter = 0
-        self.outgoing_command_idx = 0
+        self.info_requested = False
+        self.video_requested = False
+        self._video_queue = asyncio.Queue()
+        self._audio_queue = asyncio.Queue()
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -57,7 +163,7 @@ class Session(PacketQueueMixin):
         decoded = ENC_METHODS[self.dev.encryption][0](data)
         pkt = parse_packet(decoded)
         logger.debug(f"recv< {pkt} {pkt.get_payload()}")
-        self.queue.put_nowait(pkt)
+        self.packet_queue.put_nowait(pkt)
 
     async def send(self, pkt):
         logger.debug(f"send> {pkt}")
@@ -65,6 +171,7 @@ class Session(PacketQueueMixin):
         self.transport.sendto(encoded_pkt, (self.dev.addr, self.dev.port))
 
     async def handle_incoming_packet(self, pkt):
+        # logger.debug('process %s', pkt)
         if pkt.type == PacketType.PunchPkt:
             pass
         if pkt.type == PacketType.P2pRdy:
@@ -79,20 +186,30 @@ class Session(PacketQueueMixin):
     async def login(self):
         pass
 
+    async def request_video(self, mode):
+        """
+        Mode is 1 for 640x480 or 2 for 320x240
+        """
+        pass
+
     async def handle_drw(self, pkt):
         pass
 
     async def _run(self):
         self.transport = await self.create_udp()
-        self.start_queue()
+        self.start_packet_queue()
+        self.start_video_queue()
 
         await self.send(make_punch_pkt(self.dev.dev_id))
 
         # send punch packet
         while True:
-            await asyncio.sleep(5)
-            await self.send(make_punch_pkt(self.dev.dev_id))
-            print(f"iterate in Session for {self.dev.dev_id}")
+            await self.loop_step()
+            await asyncio.sleep(0.2)
+
+    async def loop_step(self):
+        # await self.send(make_punch_pkt(self.dev.dev_id))
+        print(f"iterate in Session for {self.dev.dev_id}")
 
     def start(self):
         return asyncio.create_task(self._run())
@@ -116,6 +233,32 @@ class JsonSession(Session):
 
     async def login(self):
         await self.send_command(JsonCommands.CMD_CHECK_USER)
+        await asyncio.sleep(0.2)
+        await self.send_command(JsonCommands.CMD_GET_PARMS)
+        self.info_requested = True
+
+    async def request_video(self, mode):
+        await self.send_command(JsonCommands.CMD_STREAM, video=mode)
 
     async def handle_drw(self, drw_pkt):
+        logger.debug('handle_drw(idx=%s)', drw_pkt._cmd_idx)
         await self.send(make_drw_ack_pkt(drw_pkt))
+        if drw_pkt._channel == Channel.Video:
+            logger.info(f'Got video data {drw_pkt.get_drw_payload()}')
+            self._video_queue.put_nowait(drw_pkt)
+
+    async def handle_incoming_video_packet(self, pkt):
+        video_payload = pkt.get_drw_payload()
+
+        # 0x20 - size of the header starting with this magic
+        if video_payload.startswith(b'\x55\xaa\x15\xa8\x03'):
+            self.video_boundaries.add(pkt._cmd_idx)
+            self.video_received[pkt._cmd_idx] = video_payload[0x20:]
+        else:
+            self.video_received[pkt._cmd_idx] = video_payload
+        await self.process_video_frame()
+
+    async def loop_step(self):
+        if self.info_requested and not self.video_requested:
+            self.video_requested = True
+            await self.request_video(1)
