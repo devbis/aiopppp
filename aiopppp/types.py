@@ -6,6 +6,12 @@ class Encryption(Enum):
     XOR1 = 1
 
 
+class Channel(Enum):
+    Command = 0
+    Video = 1
+    Audio = 2
+
+
 class DeviceID:
     def __init__(self, prefix, serial, suffix):
         self.prefix = prefix
@@ -39,3 +45,9 @@ class Device:
 
     def __hash__(self):
         return hash((self.dev_id, self.addr, self.port))
+
+
+class VideoFrame:
+    def __init__(self, idx, data):
+        self.idx = idx
+        self.data = data

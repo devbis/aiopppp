@@ -2,9 +2,9 @@ import asyncio
 import logging
 from random import randint
 
-from .const import PacketType, CAM_MAGIC
+from .const import CAM_MAGIC, PacketType
 from .encrypt import ENC_METHODS
-from .packets import parse_packet, Packet
+from .packets import Packet, parse_packet
 from .types import Device
 
 DISCOVERY_PORT = 32108
