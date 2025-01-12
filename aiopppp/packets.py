@@ -56,7 +56,8 @@ class DrwPkt(Packet):
         return f'chn:{self._channel.name}, idx: {self._cmd_idx}'
 
     def __str__(self):
-        return f'{self.type.name}({self.drw_str()}): [{self._payload.hex(" ")}]'
+        # return f'{self.type.name}({self.drw_str()}): [{self._payload.hex(" ")}]'
+        return f'{self.type.name}({self.drw_str()}): len={len(self._payload)}]'
 
 
 class JsonCmdPkt(DrwPkt):
