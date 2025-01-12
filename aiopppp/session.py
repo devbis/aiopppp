@@ -92,51 +92,10 @@ class VideoQueueMixin:
         if complete:
             self.last_video_frame = index
             self.frame_queue.put_nowait(VideoFrame(idx=index, data=b''.join(out)))
-            # await self.emit('videoFrame', frame=b''.join(out), packetIndex=index)
 
-            for idx in self.video_received.keys():
-                if idx < index:
-                    del self.video_received[idx]
-
-
-    # if (this.videoBoundaries.size <= 1) {
-    #   return
-    # }
-    # let array = Array.from(this.videoBoundaries).sort((a, b) => a - b)
-    # let index = array[array.length - 2]
-    # let lastIndex = array[array.length - 1]
-    #
-    # if (index == this.lastVideoFrame) {
-    #   return
-    # }
-    #
-    # let complete = true
-    # let out = []
-    # let completeness = ''
-    # for (let i = index; i < lastIndex; i++) {
-    #   if (this.videoReceived[i] !== undefined) {
-    #     out.push(this.videoReceived[i])
-    #     completeness += 'x'
-    #   } else {
-    #     complete = false
-    #     completeness += '_'
-    #   }
-    # }
-    #
-    # // console.log(completeness)
-    # if (complete) {
-    #   /*console.log(
-    #     `------------>>>>>> GOT VIDEO FRAME FROM ${index} to ${lastIndex}`
-    #   )
-    #   */
-    #   this.lastVideoFrame = index
-    #   this.emit('videoFrame', { frame: Buffer.concat(out), packetIndex: index })
-    #
-    #   //free ram where videoRecieved[<index]
-    #   for (let i = 0; i < index; i++) {
-    #     this.videoReceived[i] = undefined
-    #   }
-    # }
+            to_delete = [idx for idx in self.video_received.keys() if idx < index]
+            for idx in to_delete:
+                del self.video_received[idx]
 
 
 class Session(PacketQueueMixin, VideoQueueMixin):
@@ -148,8 +107,6 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.ready_counter = 0
         self.info_requested = False
         self.video_requested = False
-        self._video_queue = asyncio.Queue()
-        self._audio_queue = asyncio.Queue()
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -162,7 +119,8 @@ class Session(PacketQueueMixin, VideoQueueMixin):
     def on_receive(self, data):
         decoded = ENC_METHODS[self.dev.encryption][0](data)
         pkt = parse_packet(decoded)
-        logger.debug(f"recv< {pkt} {pkt.get_payload()}")
+        # logger.debug(f"recv< {pkt} {pkt.get_payload()}")
+        logger.debug(f"recv< {pkt.type}, len={len(pkt.get_payload())}")
         self.packet_queue.put_nowait(pkt)
 
     async def send(self, pkt):
@@ -244,11 +202,12 @@ class JsonSession(Session):
         logger.debug('handle_drw(idx=%s)', drw_pkt._cmd_idx)
         await self.send(make_drw_ack_pkt(drw_pkt))
         if drw_pkt._channel == Channel.Video:
-            logger.info(f'Got video data {drw_pkt.get_drw_payload()}')
-            self._video_queue.put_nowait(drw_pkt)
+            # logger.debug(f'Got video data {drw_pkt.get_drw_payload()}')
+            self.video_chunk_queue.put_nowait(drw_pkt)
 
     async def handle_incoming_video_packet(self, pkt):
         video_payload = pkt.get_drw_payload()
+        logger.info(f'- video frame {pkt._cmd_idx}')
 
         # 0x20 - size of the header starting with this magic
         if video_payload.startswith(b'\x55\xaa\x15\xa8\x03'):
