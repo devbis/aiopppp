@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from .discover import Discovery
-from .http_server import start_web_server, SESSIONS
+from .http_server import SESSIONS, start_web_server
 from .session import JsonSession
 
 logger = logging.getLogger(__name__)

@@ -1,4 +1,5 @@
 import json
+import logging
 import struct
 
 from .const import CAM_MAGIC, PacketType
@@ -96,7 +97,10 @@ def make_punch_pkt(dev_id):
 def parse_drw_pkt(data):
     channel, cmd_idx = struct.unpack('>xBH', data[:4])
     if data[4:6] == b'\x06\x0a':
-        return JsonCmdPkt(cmd_idx, json.loads(data[12:]), preamble=data[4:8])
+        try:
+            return JsonCmdPkt(cmd_idx, json.loads(data[12:]), preamble=data[4:8])
+        except ValueError:
+            logging.warning(f'Failed to parse JSON: {data}')
     return DrwPkt(channel, cmd_idx, data[4:])
 
 

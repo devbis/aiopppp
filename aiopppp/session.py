@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from .const import JSON_COMMAND_NAMES, JsonCommands, PacketType
+from .const import JSON_COMMAND_NAMES, PTZ, JsonCommands, PacketType
 from .encrypt import ENC_METHODS
 from .packets import (
     JsonCmdPkt,
@@ -87,7 +87,7 @@ class VideoQueueMixin:
             else:
                 complete = False
                 completeness += '_'
-        logger.info(f"------- completeness: {completeness}")
+        logger.info(f".. completeness: {completeness}")
 
         if complete:
             self.last_video_frame = index
@@ -140,6 +140,8 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             await self.send(make_p2palive_ack_pkt())
         elif pkt.type == PacketType.Drw:
             await self.handle_drw(pkt)
+        elif pkt.type == PacketType.DrwAck:
+            logger.warning(f'Got DRW ACK {pkt}')
 
     async def login(self):
         pass
@@ -207,7 +209,7 @@ class JsonSession(Session):
 
     async def handle_incoming_video_packet(self, pkt):
         video_payload = pkt.get_drw_payload()
-        logger.info(f'- video frame {pkt._cmd_idx}')
+        # logger.info(f'- video frame {pkt._cmd_idx}')
 
         # 0x20 - size of the header starting with this magic
         if video_payload.startswith(b'\x55\xaa\x15\xa8\x03'):
@@ -221,3 +223,34 @@ class JsonSession(Session):
         if self.info_requested and not self.video_requested:
             self.video_requested = True
             await self.request_video(1)
+
+    async def control(self, **kwargs):
+        await self.send_command(JsonCommands.CMD_DEV_CONTROL, **kwargs)
+
+    async def toggle_lamp(self, value):
+        await self.control(lamp=1 if value else 0)
+
+    async def toggle_ir(self, value):
+        await self.control(icut=1 if value else 0)
+
+    async def rotate_start(self, value):
+        value = PTZ[f'{value.upper()}_START'].value
+        await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value)
+
+    async def rotate_stop(self, **kwargs):
+        for value in [PTZ.LEFT_STOP, PTZ.RIGHT_STOP, PTZ.DOWN_STOP, PTZ.UP_STOP]:
+            await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value.value)
+
+    async def step_rotate(self, value):
+        await self.rotate_start(value)
+        await asyncio.sleep(0.1)
+        await self.rotate_stop()
+
+    async def reboot(self, **kwargs):
+        await self.control(reboot=1)
+
+    async def reset(self, **kwargs):
+        """
+        Reset to factory defaults
+        """
+        await self.control(reset=1)
