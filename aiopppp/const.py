@@ -49,6 +49,27 @@ class JsonCommands(Enum):
     CMD_GET_CLOUD_SUPPORT = 9000
 
 
+class PTZ(Enum):
+    # Pan-tilt-zoom control
+    UP_START = 0
+    UP_STOP = 1
+    DOWN_START = 2
+    DOWN_STOP = 3
+    LEFT_START = 4
+    LEFT_STOP = 5
+    RIGHT_START = 6
+    RIGHT_STOP = 7
+
+    # TILT_UP_START = 0
+    # TILT_UP_STOP = 1
+    # TILT_DOWN_START = 2
+    # TILT_DOWN_STOP = 3
+    # PAN_LEFT_START = 4
+    # PAN_LEFT_STOP = 5
+    # PAN_RIGHT_START = 6
+    # PAN_RIGHT_STOP = 7
+
+
 JSON_COMMAND_NAMES = {
     JsonCommands.CMD_SET_CYPUSH: "set_cypush",
     JsonCommands.CMD_CHECK_USER: "check_user",
