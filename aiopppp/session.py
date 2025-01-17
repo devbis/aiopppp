@@ -96,6 +96,9 @@ class VideoQueueMixin:
             to_delete = [idx for idx in self.video_received.keys() if idx < index]
             for idx in to_delete:
                 del self.video_received[idx]
+            to_delete = [idx for idx in self.video_boundaries if idx < index]
+            for idx in to_delete:
+                self.video_boundaries.remove(idx)
 
 
 class Session(PacketQueueMixin, VideoQueueMixin):
