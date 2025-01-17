@@ -46,6 +46,8 @@ class PacketQueueMixin:
 
 
 class VideoQueueMixin:
+    MAX_FRAME_QUEUE_SIZE = 50
+
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.video_chunk_queue = asyncio.Queue()
@@ -91,6 +93,9 @@ class VideoQueueMixin:
 
         if complete:
             self.last_video_frame = index
+            while self.frame_queue.qsize() > self.MAX_FRAME_QUEUE_SIZE:
+                self.frame_queue.get_nowait()
+
             self.frame_queue.put_nowait(VideoFrame(idx=index, data=b''.join(out)))
 
             to_delete = [idx for idx in self.video_received.keys() if idx < index]
