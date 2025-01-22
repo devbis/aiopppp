@@ -8,6 +8,7 @@ from .packets import Packet, parse_packet
 from .types import Device
 
 DISCOVERY_PORT = 32108
+DEFAULT_DISCOVERY_ADDRESS = '255.255.255.255'
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +22,11 @@ class DiscoverUDPProtocol(asyncio.DatagramProtocol):
         self.transport = transport
 
     def datagram_received(self, data, addr):
-        # message = data.decode()
         self.on_receive(data, addr)
 
 
 async def create_udp_server(port, on_receive):
-    # Bind to localhost on UDP port 8888
+    # Bind to localhost on UDP port
     loop = asyncio.get_running_loop()
     transport, _ = await loop.create_datagram_endpoint(
         lambda: DiscoverUDPProtocol(on_receive),
@@ -37,9 +37,12 @@ async def create_udp_server(port, on_receive):
 
 
 class Discovery:
-    def __init__(self):
+    def __init__(self, remote_addr=DEFAULT_DISCOVERY_ADDRESS, remote_port=DISCOVERY_PORT, local_port=0):
         self.devices = {}
         self.transport = None
+        self.remote_addr = remote_addr
+        self.remote_port = remote_port
+        self.local_port = local_port
 
     @staticmethod
     def get_possible_discovery_packets():
@@ -81,19 +84,19 @@ class Discovery:
                 callback(device)
 
     async def discover(self, callback):
-        logger.warning('start discovery')
-        initial_port = randint(2000, 40000)
+        logger.info('start discovery')
+        initial_port = self.local_port or randint(0x800, 0xfff0)
 
         self.transport = await create_udp_server(initial_port, lambda data, addr: self.on_receive(data, addr, callback))
         possible_discovery_packets = self.get_possible_discovery_packets()
         try:
             while True:
-                logger.warning(f'sending discovery message {("255.255.255.255", DISCOVERY_PORT)}')
+                logger.debug(f'sending discovery message {(self.remote_addr, self.remote_port)}')
                 for packet in possible_discovery_packets:
                     logger.debug('broadcast> %s', packet.hex(' '))
-                    self.transport.sendto(packet, ('255.255.255.255', DISCOVERY_PORT))
+                    self.transport.sendto(packet, (self.remote_addr, self.remote_port))
 
-                await asyncio.sleep(5)
+                await asyncio.sleep(10)
         finally:
             logger.warning('end discovery')
             self.transport.close()
