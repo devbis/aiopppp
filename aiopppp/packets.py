@@ -21,11 +21,6 @@ class Packet:
         payload = self.get_payload()
         return struct.pack('>BBH', CAM_MAGIC, self.type.value, len(payload)) + payload
 
-    # def as_object(self):
-    #     if self.type not in PARSERS:
-    #         return self.get_payload()
-    #     return PARSERS[self.type][1](self.get_payload())
-
 
 class PunchPkt(Packet):
     def __str__(self):

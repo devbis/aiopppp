@@ -8,19 +8,26 @@ from .session import JsonSession
 
 logger = logging.getLogger(__name__)
 
+discovery = None
+
 
 def on_device_found(device):
-    session = JsonSession(device)
+    session = JsonSession(device, on_disconnect=on_device_lost)
     SESSIONS[device.dev_id.dev_id] = session
     session.start()
 
 
 def on_device_lost(device):
-    # TODO: add event
-    SESSIONS.pop(device.dev_id.dev_id, None)
+    logger.warning('Device %s lost', device)
+    s = SESSIONS.pop(device.dev_id.dev_id, None)
+    if s:
+        s.main_task.cancel()
+    if discovery:
+        discovery.delete_device(device)
 
 
 async def amain(remote_addr, local_port):
+    global discovery
     discovery = Discovery(remote_addr=remote_addr)
     await asyncio.gather(discovery.discover(on_device_found), start_web_server())
 
