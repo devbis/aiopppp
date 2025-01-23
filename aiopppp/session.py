@@ -109,7 +109,7 @@ class VideoQueueMixin:
 
 
 class Session(PacketQueueMixin, VideoQueueMixin):
-    def __init__(self, dev, *args, **kwargs):
+    def __init__(self, dev, on_disconnect, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dev = dev
         self.outgoing_command_idx = 0
@@ -117,7 +117,11 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.ready_counter = 0
         self.info_requested = False
         self.video_requested = False
+        self.video_stale_at = None
         self.last_alive_pkt = datetime.datetime.now()
+        self.last_drw_pkt = datetime.datetime.now()
+        self.on_disconnect = on_disconnect
+        self.main_task = None
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -154,6 +158,8 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             logger.info(f'Got DRW ACK {pkt}')
         elif pkt.type == PacketType.P2PAliveAck:
             logger.info(f'Got P2PAlive ACK {pkt}')
+        else:
+            logger.warning(f'Got UNKNOWN {pkt}')
 
     async def login(self):
         pass
@@ -188,8 +194,18 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             await self.send(make_p2palive_pkt())
 
     def start(self):
-        return asyncio.create_task(self._run())
+        self.main_task = asyncio.create_task(self._run())
+        return self.main_task
 
+    def stop(self):
+        logger.warning('STOP!!!!')
+        self.transport.close()
+        self.ready_counter = 0
+        self.process_packet_task.cancel()
+        self.process_video_task.cancel()
+        if self.on_disconnect:
+            self.on_disconnect(self.dev)
+        self.main_task.cancel()
 
 class JsonSession(Session):
     COMMON_DATA = {
@@ -218,8 +234,12 @@ class JsonSession(Session):
 
     async def handle_drw(self, drw_pkt):
         await super().handle_drw(drw_pkt)
+        self.last_drw_pkt = datetime.datetime.now()
         if drw_pkt._channel == Channel.Video:
             # logger.debug(f'Got video data {drw_pkt.get_drw_payload()}')
+            if self.video_stale_at:
+                logger.warning('Got video data while stale')
+                self.video_stale_at = None
             self.video_chunk_queue.put_nowait(drw_pkt)
 
     async def handle_incoming_video_packet(self, pkt):
@@ -238,6 +258,14 @@ class JsonSession(Session):
         if self.info_requested and not self.video_requested:
             self.video_requested = True
             await self.request_video(1)
+        if not self.video_stale_at and (datetime.datetime.now() - self.last_drw_pkt).total_seconds() > 5 :
+            self.video_stale_at = self.last_drw_pkt
+            logger.info('No video for 5 seconds. Re-request video ')
+            await self.request_video(1)
+        if self.video_stale_at and (datetime.datetime.now() - self.video_stale_at).total_seconds() > 10:
+            # camera disconnected
+            logger.warning('No video for 10 seconds. Disconnecting')
+            self.stop()
         await super().loop_step()
 
     async def control(self, **kwargs):

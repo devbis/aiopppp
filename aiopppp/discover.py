@@ -101,3 +101,7 @@ class Discovery:
             logger.warning('end discovery')
             self.transport.close()
             self.transport = None
+
+    def delete_device(self, device):
+        self.devices.pop(device.dev_id, None)
+        logger.debug(f'deleted device {device.dev_id}')
