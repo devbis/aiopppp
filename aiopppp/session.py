@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 
 from .const import JSON_COMMAND_NAMES, PTZ, JsonCommands, PacketType
@@ -7,6 +8,7 @@ from .packets import (
     JsonCmdPkt,
     make_drw_ack_pkt,
     make_p2palive_ack_pkt,
+    make_p2palive_pkt,
     make_punch_pkt,
     parse_packet,
 )
@@ -115,6 +117,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.ready_counter = 0
         self.info_requested = False
         self.video_requested = False
+        self.last_alive_pkt = datetime.datetime.now()
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -137,7 +140,6 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.transport.sendto(encoded_pkt, (self.dev.addr, self.dev.port))
 
     async def handle_incoming_packet(self, pkt):
-        # logger.debug('process %s', pkt)
         if pkt.type == PacketType.PunchPkt:
             pass
         if pkt.type == PacketType.P2pRdy:
@@ -149,7 +151,9 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         elif pkt.type == PacketType.Drw:
             await self.handle_drw(pkt)
         elif pkt.type == PacketType.DrwAck:
-            logger.warning(f'Got DRW ACK {pkt}')
+            logger.info(f'Got DRW ACK {pkt}')
+        elif pkt.type == PacketType.P2PAliveAck:
+            logger.info(f'Got P2PAlive ACK {pkt}')
 
     async def login(self):
         pass
@@ -160,8 +164,9 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         """
         pass
 
-    async def handle_drw(self, pkt):
-        pass
+    async def handle_drw(self, drw_pkt):
+        logger.debug('handle_drw(idx=%s)', drw_pkt._cmd_idx)
+        await self.send(make_drw_ack_pkt(drw_pkt))
 
     async def _run(self):
         self.transport = await self.create_udp()
@@ -176,8 +181,11 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             await asyncio.sleep(0.2)
 
     async def loop_step(self):
-        # await self.send(make_punch_pkt(self.dev.dev_id))
-        print(f"iterate in Session for {self.dev.dev_id}")
+        logger.debug(f"iterate in Session for {self.dev.dev_id}")
+        if (datetime.datetime.now() - self.last_alive_pkt).total_seconds() > 10:
+            self.last_alive_pkt = datetime.datetime.now()
+            logger.info('Send P2PAlive')
+            await self.send(make_p2palive_pkt())
 
     def start(self):
         return asyncio.create_task(self._run())
@@ -209,8 +217,7 @@ class JsonSession(Session):
         await self.send_command(JsonCommands.CMD_STREAM, video=mode)
 
     async def handle_drw(self, drw_pkt):
-        logger.debug('handle_drw(idx=%s)', drw_pkt._cmd_idx)
-        await self.send(make_drw_ack_pkt(drw_pkt))
+        await super().handle_drw(drw_pkt)
         if drw_pkt._channel == Channel.Video:
             # logger.debug(f'Got video data {drw_pkt.get_drw_payload()}')
             self.video_chunk_queue.put_nowait(drw_pkt)
@@ -231,6 +238,7 @@ class JsonSession(Session):
         if self.info_requested and not self.video_requested:
             self.video_requested = True
             await self.request_video(1)
+        await super().loop_step()
 
     async def control(self, **kwargs):
         await self.send_command(JsonCommands.CMD_DEV_CONTROL, **kwargs)
