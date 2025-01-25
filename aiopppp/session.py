@@ -55,6 +55,8 @@ class VideoQueueMixin:
         self.video_chunk_queue = asyncio.Queue()
         self.frame_queue = asyncio.Queue()
         self.process_video_task = None
+        self.last_drw_pkt_idx = 0
+        self.video_epoch = 0  # number of overflows over 0xffff DRW index
 
         self.video_received = {}
         self.video_boundaries = set()
@@ -158,6 +160,8 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             logger.info(f'Got DRW ACK {pkt}')
         elif pkt.type == PacketType.P2PAliveAck:
             logger.info(f'Got P2PAlive ACK {pkt}')
+        elif pkt.type == PacketType.Close:
+            await self.handle_close(pkt)
         else:
             logger.warning(f'Got UNKNOWN {pkt}')
 
@@ -173,6 +177,10 @@ class Session(PacketQueueMixin, VideoQueueMixin):
     async def handle_drw(self, drw_pkt):
         logger.debug('handle_drw(idx=%s)', drw_pkt._cmd_idx)
         await self.send(make_drw_ack_pkt(drw_pkt))
+
+    async def handle_close(self, pkt):
+        logger.debug('handle_close %s', pkt)
+        self.stop()
 
     async def _run(self):
         self.transport = await self.create_udp()
@@ -235,6 +243,11 @@ class JsonSession(Session):
     async def handle_drw(self, drw_pkt):
         await super().handle_drw(drw_pkt)
         self.last_drw_pkt = datetime.datetime.now()
+        if drw_pkt._cmd_idx < self.last_drw_pkt_idx - 100 and self.last_drw_pkt_idx > 64000 and drw_pkt._cmd_idx < 100:
+            self.last_drw_pkt_idx = drw_pkt._cmd_idx
+            self.video_epoch += 1
+        if self.last_drw_pkt_idx < drw_pkt._cmd_idx:
+            self.last_drw_pkt_idx = drw_pkt._cmd_idx
         if drw_pkt._channel == Channel.Video:
             # logger.debug(f'Got video data {drw_pkt.get_drw_payload()}')
             if self.video_stale_at:
@@ -245,13 +258,17 @@ class JsonSession(Session):
     async def handle_incoming_video_packet(self, pkt):
         video_payload = pkt.get_drw_payload()
         # logger.info(f'- video frame {pkt._cmd_idx}')
+        video_marker = b'\x55\xaa\x15\xa8\x03'
+
+        # 0x10000 - max number of chunks in one epoch,we need to keep order of chunks
+        video_chunk_idx = pkt._cmd_idx + self.video_epoch * 0x10000
 
         # 0x20 - size of the header starting with this magic
-        if video_payload.startswith(b'\x55\xaa\x15\xa8\x03'):
-            self.video_boundaries.add(pkt._cmd_idx)
-            self.video_received[pkt._cmd_idx] = video_payload[0x20:]
+        if video_payload.startswith(video_marker):
+            self.video_boundaries.add(video_chunk_idx)
+            self.video_received[video_chunk_idx] = video_payload[0x20:]
         else:
-            self.video_received[pkt._cmd_idx] = video_payload
+            self.video_received[video_chunk_idx] = video_payload
         await self.process_video_frame()
 
     async def loop_step(self):
