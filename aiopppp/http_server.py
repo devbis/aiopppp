@@ -50,7 +50,7 @@ async def handle_commands(request):
     params = await request.json()
     session = SESSIONS[dev_id_str]
     web2cmd = {
-        'toggle-lamp': session.toggle_lamp,
+        'toggle-lamp': session.toggle_whitelight,
         'toggle-ir': session.toggle_ir,
         'rotate': session.step_rotate,
         'rotate-stop': session.rotate_stop,
