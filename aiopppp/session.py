@@ -291,6 +291,9 @@ class JsonSession(Session):
     async def toggle_lamp(self, value):
         await self.control(lamp=1 if value else 0)
 
+    async def toggle_whitelight(self, value, **kwargs):
+        await self.send_command(JsonCommands.CMD_SET_WHITELIGHT, status=value)
+
     async def toggle_ir(self, value):
         await self.control(icut=1 if value else 0)
 
