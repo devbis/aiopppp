@@ -87,9 +87,14 @@ async def stream_video(request):
     while True:
         frame = await frame_buffer.get()
         header = b'--frame\r\n'
-        header += b'Content-Type: image/jpeg\r\n\r\n'
-        await response.write(header)
-        await response.write(frame.data)
+        header += b'Content-Type: image/jpeg\r\n'
+        header += b'Content-Length: %d\r\n\r\n' % len(frame.data)
+        try:
+            await response.write(header)
+            await response.write(frame.data)
+        except ConnectionResetError:
+            logger.warning('Connection reset')
+            break
 
 
 async def start_web_server(port=4000):
