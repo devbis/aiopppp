@@ -48,12 +48,10 @@ class PacketQueueMixin:
 
 
 class VideoQueueMixin:
-    MAX_FRAME_QUEUE_SIZE = 50
-
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.video_chunk_queue = asyncio.Queue()
-        self.frame_queue = asyncio.Queue()
+        self.frame_buffer = SharedFrameBuffer()
         self.process_video_task = None
         self.last_drw_pkt_idx = 0
         self.video_epoch = 0  # number of overflows over 0xffff DRW index
@@ -97,10 +95,8 @@ class VideoQueueMixin:
 
         if complete:
             self.last_video_frame = index
-            while self.frame_queue.qsize() > self.MAX_FRAME_QUEUE_SIZE:
-                self.frame_queue.get_nowait()
 
-            self.frame_queue.put_nowait(VideoFrame(idx=index, data=b''.join(out)))
+            await self.frame_buffer.publish(VideoFrame(idx=index, data=b''.join(out)))
 
             to_delete = [idx for idx in self.video_received.keys() if idx < index]
             for idx in to_delete:
@@ -215,6 +211,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             self.on_disconnect(self.dev)
         self.main_task.cancel()
 
+
 class JsonSession(Session):
     COMMON_DATA = {
         'user': "admin",
@@ -318,3 +315,19 @@ class JsonSession(Session):
         Reset to factory defaults
         """
         await self.control(reset=1)
+
+
+class SharedFrameBuffer:
+    def __init__(self):
+        self.condition = asyncio.Condition()
+        self.latest_frame = None
+
+    async def publish(self, frame: VideoFrame):
+        async with self.condition:
+            self.latest_frame = frame
+            self.condition.notify_all()
+
+    async def get(self):
+        async with self.condition:
+            await self.condition.wait()
+            return self.latest_frame

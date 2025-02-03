@@ -64,6 +64,7 @@ async def handle_commands(request):
     await web2cmd(**params)
     return web.Response(text='{"status": "ok"}', headers={'content-type': 'application/json'})
 
+
 async def stream_video(request):
     response = web.StreamResponse()
     response.content_type = 'multipart/x-mixed-replace; boundary=frame'
@@ -71,10 +72,10 @@ async def stream_video(request):
     await response.prepare(request)
 
     dev_id_str = request.match_info['dev_id']
-    frame_queue = SESSIONS[dev_id_str].frame_queue
+    frame_buffer = SESSIONS[dev_id_str].frame_buffer
 
     while True:
-        frame = await frame_queue.get()
+        frame = await frame_buffer.get()
         header = b'--frame\r\n'
         header += b'Content-Type: image/jpeg\r\n\r\n'
         await response.write(header)
