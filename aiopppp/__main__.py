@@ -18,7 +18,7 @@ def on_device_found(device):
 
 
 def on_device_lost(device):
-    logger.warning('Device %s lost', device)
+    logger.warning('Device %s lost', device.dev_id)
     s = SESSIONS.pop(device.dev_id.dev_id, None)
     if s:
         s.main_task.cancel()

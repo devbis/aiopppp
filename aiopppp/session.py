@@ -175,7 +175,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         await self.send(make_drw_ack_pkt(drw_pkt))
 
     async def handle_close(self, pkt):
-        logger.debug('handle_close %s', pkt)
+        logger.info('%s requested close', self.dev.dev_id)
         self.stop()
 
     async def _run(self):
@@ -202,7 +202,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         return self.main_task
 
     def stop(self):
-        logger.warning('STOP!!!!')
+        logger.debug('Stopping session')
         self.transport.close()
         self.ready_counter = 0
         self.process_packet_task.cancel()
@@ -289,16 +289,20 @@ class JsonSession(Session):
         await self.control(lamp=1 if value else 0)
 
     async def toggle_whitelight(self, value, **kwargs):
+        logger.info('%s: toggle white light = %s', self.dev.dev_id, value)
         await self.send_command(JsonCommands.CMD_SET_WHITELIGHT, status=value)
 
     async def toggle_ir(self, value):
+        logger.info('%s: toggle IR = %s', self.dev.dev_id, value)
         await self.control(icut=1 if value else 0)
 
     async def rotate_start(self, value):
+        logger.info('%s: rotate_start %s', self.dev.dev_id, value)
         value = PTZ[f'{value.upper()}_START'].value
         await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value)
 
     async def rotate_stop(self, **kwargs):
+        logger.info('%s: rotate_stop', self.dev.dev_id)
         for value in [PTZ.LEFT_STOP, PTZ.RIGHT_STOP, PTZ.DOWN_STOP, PTZ.UP_STOP]:
             await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value.value)
 
@@ -308,6 +312,7 @@ class JsonSession(Session):
         await self.rotate_stop()
 
     async def reboot(self, **kwargs):
+        logger.info('%s: reboot', self.dev.dev_id)
         await self.control(reboot=1)
 
     async def reset(self, **kwargs):
