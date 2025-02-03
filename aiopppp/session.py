@@ -305,10 +305,11 @@ class JsonSession(Session):
         logger.info('%s: rotate_stop', self.dev.dev_id)
         for value in [PTZ.LEFT_STOP, PTZ.RIGHT_STOP, PTZ.DOWN_STOP, PTZ.UP_STOP]:
             await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value.value)
+            await asyncio.sleep(0.05)
 
     async def step_rotate(self, value):
         await self.rotate_start(value)
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.2)
         await self.rotate_stop()
 
     async def reboot(self, **kwargs):
