@@ -44,7 +44,7 @@ async def on_device_found(device):
     session.start()
 
     while True:
-        frame = await session.frame_queue.get()
+        frame = await session.frame_buffer.get()
         
         # Do something with the frame
         # await response.write(b'--frame\r\nContent-Type: image/jpeg\r\n\r\n')
