@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 
 from aiohttp import web
 
@@ -76,25 +77,35 @@ async def handle_commands(request):
 
 
 async def stream_video(request):
+    dev_id_str = request.match_info['dev_id']
+    if dev_id_str not in SESSIONS:
+        return web.Response(
+            text='{"status": "error", "message": "unknown device"}',
+            headers={'content-type': 'application/json'},
+            status=404,
+        )
+
     response = web.StreamResponse()
-    response.content_type = 'multipart/x-mixed-replace; boundary=frame'
+    boundary = '--frame' + uuid.uuid4().hex
+    response.content_type = f'multipart/x-mixed-replace; boundary={boundary}'
+    response.content_length = 1000000000000
 
     await response.prepare(request)
 
-    dev_id_str = request.match_info['dev_id']
     frame_buffer = SESSIONS[dev_id_str].frame_buffer
 
     while True:
         frame = await frame_buffer.get()
-        header = b'--frame\r\n'
-        header += b'Content-Type: image/jpeg\r\n'
-        header += b'Content-Length: %d\r\n\r\n' % len(frame.data)
+        header = f'--{boundary}\r\n'.encode()
+        header += b'Content-Length: %d\r\n' % len(frame.data)
+        header += b'Content-Type: image/jpeg\r\n\r\n'
         try:
             await response.write(header)
             await response.write(frame.data)
         except ConnectionResetError:
             logger.warning('Connection reset')
             break
+    return response
 
 
 async def start_web_server(port=4000):
