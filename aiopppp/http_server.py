@@ -48,6 +48,12 @@ async def handle_commands(request):
     dev_id_str = request.match_info['dev_id']
     cmd = request.match_info['cmd']
     params = await request.json()
+    if dev_id_str not in SESSIONS:
+        return web.Response(
+            text='{"status": "error", "message": "unknown device"}',
+            headers={'content-type': 'application/json'},
+            status=404,
+        )
     session = SESSIONS[dev_id_str]
     web2cmd = {
         'toggle-lamp': session.toggle_whitelight,
@@ -55,11 +61,15 @@ async def handle_commands(request):
         'rotate': session.step_rotate,
         'rotate-stop': session.rotate_stop,
         'reboot': session.reboot,
-        'reset': session.reset,
+        # 'reset': session.reset,
     }.get(cmd)
 
     if web2cmd is None:
-        return web.Response(text='{"status": "error", "message": "unknown command"}', headers={'content-type': 'application/json'}, status=404)
+        return web.Response(
+            text='{"status": "error", "message": "unknown command"}',
+            headers={'content-type': 'application/json'},
+            status=404,
+        )
 
     await web2cmd(**params)
     return web.Response(text='{"status": "ok"}', headers={'content-type': 'application/json'})
