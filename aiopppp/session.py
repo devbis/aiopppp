@@ -62,13 +62,13 @@ class VideoQueueMixin:
 
     async def process_video_queue(self):
         while True:
-            pkt = await self.video_chunk_queue.get()
-            await self.handle_incoming_video_packet(pkt)
+            pkt_epoch, pkt = await self.video_chunk_queue.get()
+            await self.handle_incoming_video_packet(pkt_epoch, pkt)
 
     def start_video_queue(self):
         self.process_video_task = asyncio.create_task(self.process_video_queue())
 
-    async def handle_incoming_video_packet(self, pkt):
+    async def handle_incoming_video_packet(self, pkt_epoch, pkt):
         raise NotImplementedError
 
     async def process_video_frame(self):
@@ -237,28 +237,40 @@ class JsonSession(Session):
     async def request_video(self, mode):
         await self.send_command(JsonCommands.CMD_STREAM, video=mode)
 
+    def _get_drw_epoch(self, drw_pkt):
+        if self.last_drw_pkt_idx > 0xff00 and drw_pkt._cmd_idx < 0x100:
+            return self.video_epoch + 1
+        if self.video_epoch and self.last_drw_pkt_idx < 0x100 and drw_pkt._cmd_idx > 0xff00:
+            return self.video_epoch - 1
+        return self.video_epoch
+
     async def handle_drw(self, drw_pkt):
         await super().handle_drw(drw_pkt)
         self.last_drw_pkt = datetime.datetime.now()
-        if drw_pkt._cmd_idx < self.last_drw_pkt_idx - 100 and self.last_drw_pkt_idx > 64000 and drw_pkt._cmd_idx < 100:
+
+        # # 0x10000 - max number of chunks in one epoch,we need to keep order of chunks
+        pkt_epoch = self._get_drw_epoch(drw_pkt)
+
+        if pkt_epoch > self.video_epoch:
+            logger.info('Video epoch changed %s -> %s', self.video_epoch, pkt_epoch)
+            self.video_epoch = pkt_epoch
             self.last_drw_pkt_idx = drw_pkt._cmd_idx
-            self.video_epoch += 1
-        if self.last_drw_pkt_idx < drw_pkt._cmd_idx:
+        elif self.last_drw_pkt_idx < drw_pkt._cmd_idx:
             self.last_drw_pkt_idx = drw_pkt._cmd_idx
+
         if drw_pkt._channel == Channel.Video:
             # logger.debug(f'Got video data {drw_pkt.get_drw_payload()}')
             if self.video_stale_at:
                 logger.warning('Got video data while stale')
                 self.video_stale_at = None
-            self.video_chunk_queue.put_nowait(drw_pkt)
+            self.video_chunk_queue.put_nowait((pkt_epoch, drw_pkt))
 
-    async def handle_incoming_video_packet(self, pkt):
+    async def handle_incoming_video_packet(self, pkt_epoch, pkt):
         video_payload = pkt.get_drw_payload()
         # logger.info(f'- video frame {pkt._cmd_idx}')
         video_marker = b'\x55\xaa\x15\xa8\x03'
 
-        # 0x10000 - max number of chunks in one epoch,we need to keep order of chunks
-        video_chunk_idx = pkt._cmd_idx + self.video_epoch * 0x10000
+        video_chunk_idx = pkt._cmd_idx + 0x10000 * pkt_epoch
 
         # 0x20 - size of the header starting with this magic
         if video_payload.startswith(video_marker):
