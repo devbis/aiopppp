@@ -19,7 +19,7 @@ from .packets import (
     parse_packet,
     pack_passtrough_cmd,
 )
-from .types import Channel, DeviceDescriptor, VideoFrame
+from .types import AudioVideoFrame, Channel, DeviceDescriptor
 from .utils import DebounceEvent
 
 logger = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ class VideoQueueMixin:
         if complete:
             self.last_video_frame = index
 
-            await self.frame_buffer.publish(VideoFrame(idx=index, data=b''.join(out)))
+            await self.frame_buffer.publish(AudioVideoFrame(idx=index, data=b''.join(out)))
 
             to_delete = [idx for idx in self.video_received.keys() if idx < index]
             for idx in to_delete:
@@ -132,7 +132,80 @@ class VideoQueueMixin:
                 self.video_boundaries.remove(idx)
 
 
-class Session(PacketQueueMixin, VideoQueueMixin):
+class AudioQueueMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.audio_chunk_queue = asyncio.Queue()
+        self.sample_buffer = SharedFrameBuffer()
+        self.process_audio_task = None
+        self.last_drw_pkt_idx = 0
+        self.audio_epoch = 0  # number of overflows over 0xffff DRW index
+
+        self.audio_received = {}
+        self.audio_boundaries = set()
+        self.last_audio_sample = -1
+
+    async def process_audio_queue(self):
+        while True:
+            pkt_epoch, pkt = await self.audio_chunk_queue.get()
+            await self.handle_incoming_audio_packet(pkt_epoch, pkt)
+
+    def start_audio_queue(self):
+        self.process_audio_task = asyncio.create_task(self.process_audio_queue())
+
+    async def handle_incoming_audio_packet(self, pkt_epoch, pkt):
+        audio_payload = pkt.get_drw_payload()
+        # logger.info(f'- video frame {pkt._cmd_idx}')
+        audio_marker = b'\x55\xaa\x15\xa8'  # next \x01 - audio marker
+        audio_chunk_idx = pkt._cmd_idx + 0x10000 * pkt_epoch
+
+        # 0x20 - size of the header starting with this magic
+        if audio_payload.startswith(audio_marker):
+            # logger.error('-------- handle audio sample: %s', audio_payload[:0x20])
+
+            self.audio_boundaries.add(audio_chunk_idx)
+            self.audio_received[audio_chunk_idx] = audio_payload[0x20:]
+        else:
+            logger.error('-------- audio part')
+            self.audio_received[audio_chunk_idx] = audio_payload
+        await self.process_audio_sample()
+
+    async def process_audio_sample(self):
+        if len(self.audio_boundaries) <= 1:
+            return
+        frame_starts = sorted(list(self.audio_boundaries))
+        index = frame_starts[-2]
+        last_index = frame_starts[-1]
+
+        if index == self.last_audio_sample:
+            return
+
+        complete = True
+        out = []
+        completeness = ''
+        for i in range(index, last_index):
+            if self.audio_received.get(i) is not None:
+                out.append(self.audio_received[i])
+                completeness += 'x'
+            else:
+                complete = False
+                completeness += '_'
+        logger.info(f".. audio completeness: {completeness}")
+
+        if complete:
+            self.last_audio_sample = index
+
+            await self.sample_buffer.publish(AudioVideoFrame(idx=index, data=b''.join(out)))
+
+            to_delete = [idx for idx in self.audio_received.keys() if idx < index]
+            for idx in to_delete:
+                del self.audio_received[idx]
+            to_delete = [idx for idx in self.audio_boundaries if idx < index]
+            for idx in to_delete:
+                self.audio_boundaries.remove(idx)
+
+
+class Session(PacketQueueMixin, VideoQueueMixin, AudioQueueMixin):
     def __init__(self, dev, on_disconnect, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -143,6 +216,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.transport = None
         self.device_is_ready = asyncio.Event()
         self.is_video_requested = False
+        self.is_audio_requested = False
         self.video_stale_at = None
         self.last_alive_pkt_at = datetime.datetime.now()
         self.last_drw_pkt_at = datetime.datetime.now()
@@ -240,6 +314,12 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         """
         pass
 
+    async def _request_audio(self, mode):
+        """
+        Mode is 1 for ADPCM
+        """
+        pass
+
     async def handle_drw(self, drw_pkt):
         logger.debug('handle_drw(idx=%s, chn=%s)', drw_pkt._cmd_idx, drw_pkt._channel)
         await self.send(make_drw_ack_pkt(drw_pkt))
@@ -320,6 +400,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.device_is_ready.clear()
         self.start_packet_queue()
         self.start_video_queue()
+        self.start_audio_queue()
         self.main_task = asyncio.create_task(self._run())
         return self.main_task
 
@@ -390,6 +471,10 @@ class JsonSession(Session):
         logger.info('Request video %s', mode)
         await self.send_command(JsonCommands.CMD_STREAM, video=mode)
 
+    async def _request_audio(self, mode):
+        logger.info('Request audio %s', mode)
+        await self.send_command(JsonCommands.CMD_STREAM, audio=mode)
+
     def _get_drw_epoch(self, drw_pkt):
         if self.last_drw_pkt_idx > 0xff00 and drw_pkt._cmd_idx < 0x100:
             return self.video_epoch + 1
@@ -418,7 +503,7 @@ class JsonSession(Session):
                 self.video_stale_at = None
             self.video_chunk_queue.put_nowait((pkt_epoch, drw_pkt))
         elif drw_pkt._channel == Channel.Audio:
-            pass
+            self.audio_chunk_queue.put_nowait((pkt_epoch, drw_pkt))
         elif drw_pkt._channel == Channel.Command:
             await self.handle_incoming_command_packet(drw_pkt)
 
@@ -778,7 +863,7 @@ class SharedFrameBuffer:
         self.condition = asyncio.Condition()
         self.latest_frame = None
 
-    async def publish(self, frame: VideoFrame):
+    async def publish(self, frame: AudioVideoFrame):
         async with self.condition:
             self.latest_frame = frame
             self.condition.notify_all()

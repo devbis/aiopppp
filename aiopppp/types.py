@@ -47,7 +47,7 @@ class DeviceDescriptor:
         return hash((self.dev_id, self.addr, self.port))
 
 
-class VideoFrame:
+class AudioVideoFrame:
     def __init__(self, idx, data):
         self.idx = idx
         self.data = data

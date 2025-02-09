@@ -24,6 +24,7 @@ async def index(request):
     '''
     videos = '<hr/>'.join(
         f'<h2>{x}</h2><img src=\"/{x}/v\"/><br/>'
+        f'<audio controls autoplay><source src=\"/{x}/a\" type=\"audio/wav\"></audio><br/>'
         f'<button onClick="sendCommand(\'{x}\', \'toggle-lamp\', {{value: 1}})">ON</button>'
         f'<button onClick="sendCommand(\'{x}\', \'toggle-lamp\', {{value: 0}})">OFF</button>'
         f'<button onClick="sendCommand(\'{x}\', \'toggle-ir\', {{value: 1}})">IR ON</button>'
@@ -119,10 +120,47 @@ async def stream_video(request):
         return response
 
 
+async def stream_audio(request):
+    dev_id_str = request.match_info['dev_id']
+    if dev_id_str not in SESSIONS:
+        return web.Response(
+            text='{"status": "error", "message": "unknown device"}',
+            headers={'content-type': 'application/json'},
+            status=404,
+        )
+
+    response = web.StreamResponse()
+    # boundary = '--frame' + uuid.uuid4().hex
+    # response.content_type = f'multipart/x-mixed-replace; boundary={boundary}'
+    # response.content_length = 1000000000000
+    response.content_type = 'audio/x-wav'
+
+    await response.prepare(request)
+    session = SESSIONS[dev_id_str]
+    if not session.audio_requested:
+        await session._request_audio(1)
+
+    frame_buffer = session.sample_buffer
+
+    while True:
+        frame = await frame_buffer.get()
+        # header = f'--{boundary}\r\n'.encode()
+        # header += b'Content-Length: %d\r\n' % len(frame.data)
+        # header += b'Content-Type: audio/x-wav\r\n\r\n'  # TODO: fix audio streaming
+        try:
+            # await response.write(header)
+            await response.write(frame.data)
+        except ConnectionResetError:
+            logger.warning('Connection reset')
+            break
+    return response
+
+
 async def start_web_server(port=4000):
     app = web.Application()
     app.router.add_get('/', index)
     app.router.add_get('/{dev_id}/v', stream_video)
+    app.router.add_get('/{dev_id}/a', stream_audio)
     app.router.add_post('/{dev_id}/c/{cmd}', handle_commands)
 
     runner = web.AppRunner(app, handle_signals=True)
