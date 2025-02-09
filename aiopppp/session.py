@@ -164,7 +164,25 @@ class Session(PacketQueueMixin, VideoQueueMixin):
     async def login(self):
         pass
 
-    async def request_video(self, mode):
+    async def start_video(self):
+        if not self.video_requested:
+            self.last_drw_pkt = datetime.datetime.now()
+            await self._request_video(1)
+            self.video_requested = True
+
+    async def stop_video(self):
+        if self.video_requested:
+            self.video_requested = False
+            self.video_stale_at = None
+            self.video_received = {}
+            self.video_boundaries = set()
+            self.video_epoch = 0
+            self.last_video_frame = -1
+            while not self.video_chunk_queue.empty():
+                self.video_chunk_queue.get_nowait()
+            await self._request_video(0)
+
+    async def _request_video(self, mode):
         """
         Mode is 1 for 640x480 or 2 for 320x240
         """
@@ -234,7 +252,8 @@ class JsonSession(Session):
         await self.send_command(JsonCommands.CMD_GET_PARMS)
         self.info_requested = True
 
-    async def request_video(self, mode):
+    async def _request_video(self, mode):
+        logger.info('Request video %s', mode)
         await self.send_command(JsonCommands.CMD_STREAM, video=mode)
 
     def _get_drw_epoch(self, drw_pkt):
@@ -268,7 +287,7 @@ class JsonSession(Session):
     async def handle_incoming_video_packet(self, pkt_epoch, pkt):
         video_payload = pkt.get_drw_payload()
         # logger.info(f'- video frame {pkt._cmd_idx}')
-        video_marker = b'\x55\xaa\x15\xa8\x03'
+        video_marker = b'\x55\xaa\x15\xa8'  # next \x03 - video marker
 
         video_chunk_idx = pkt._cmd_idx + 0x10000 * pkt_epoch
 
@@ -281,13 +300,13 @@ class JsonSession(Session):
         await self.process_video_frame()
 
     async def loop_step(self):
-        if self.info_requested and not self.video_requested:
-            self.video_requested = True
-            await self.request_video(1)
-        if not self.video_stale_at and (datetime.datetime.now() - self.last_drw_pkt).total_seconds() > 5 :
+        if (
+            self.video_requested and not self.video_stale_at and
+            (datetime.datetime.now() - self.last_drw_pkt).total_seconds() > 5
+        ):
             self.video_stale_at = self.last_drw_pkt
             logger.info('No video for 5 seconds. Re-request video ')
-            await self.request_video(1)
+            await self._request_video(1)
         if self.video_stale_at and (datetime.datetime.now() - self.video_stale_at).total_seconds() > 10:
             # camera disconnected
             logger.warning('No video for 10 seconds. Disconnecting')

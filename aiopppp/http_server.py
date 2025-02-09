@@ -35,6 +35,9 @@ async def index(request):
         f'<button onClick="sendCommand(\'{x}\', \'rotate\', {{value: \'DOWN\'}})">DOWN</button>'
         f'<button onClick="sendCommand(\'{x}\', \'rotate-stop\', {{}})">Rotate STOP</button>'
         '<br>'
+        f'<button onClick="sendCommand(\'{x}\', \'start-video\', {{}})">Start Video</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'stop-video\', {{}})">Stop Video</button>'
+        '<br>'
         f'<button onClick="sendCommand(\'{x}\', \'reboot\', {{}})">Reboot</button>'
         for x in SESSIONS.keys())
     return web.Response(
@@ -62,6 +65,8 @@ async def handle_commands(request):
         'rotate': session.step_rotate,
         'rotate-stop': session.rotate_stop,
         'reboot': session.reboot,
+        'start-video': session.start_video,
+        'stop-video': session.stop_video,
         # 'reset': session.reset,
     }.get(cmd)
 
@@ -91,8 +96,11 @@ async def stream_video(request):
     response.content_length = 1000000000000
 
     await response.prepare(request)
+    session = SESSIONS[dev_id_str]
+    if not session.video_requested:
+        await session.start_video()
 
-    frame_buffer = SESSIONS[dev_id_str].frame_buffer
+    frame_buffer = session.frame_buffer
 
     while True:
         frame = await frame_buffer.get()
