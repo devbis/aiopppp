@@ -89,6 +89,7 @@ def make_punch_pkt(dev_id):
         )
     )
 
+
 def parse_drw_pkt(data):
     channel, cmd_idx = struct.unpack('>xBH', data[:4])
     if data[4:6] == b'\x06\x0a':
@@ -105,11 +106,14 @@ def make_drw_ack_pkt(drw_pkt):
         struct.pack('>BBHH', 0xd1, drw_pkt._channel.value, 1, drw_pkt._cmd_idx)
     )
 
+
 def make_p2palive_pkt():
     return Packet(PacketType.P2PAlive, b'')
 
+
 def make_p2palive_ack_pkt():
     return Packet(PacketType.P2PAliveAck, b'')
+
 
 def create_drw(session, user, data):
     pass
