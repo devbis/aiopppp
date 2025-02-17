@@ -4,28 +4,28 @@ CAM_MAGIC = 0xf1
 
 
 class PacketType(Enum):
-  Close = 0xf0
-  LanSearchExt = 0x32
-  LanSearch = 0x30
-  P2PAlive = 0xe0
-  P2PAliveAck = 0xe1
-  Hello = 0x00
-  P2pRdy = 0x42
-  P2pReq = 0x20
-  LstReq = 0x67
-  DrwAck = 0xd1
-  Drw = 0xd0
+    Close = 0xf0
+    LanSearchExt = 0x32
+    LanSearch = 0x30
+    P2PAlive = 0xe0
+    P2PAliveAck = 0xe1
+    Hello = 0x00
+    P2pRdy = 0x42
+    P2pReq = 0x20
+    LstReq = 0x67
+    DrwAck = 0xd1
+    Drw = 0xd0
 
-  # From CSession_CtrlPkt_Proc incomplete
-  PunchTo = 0x40
-  PunchPkt = 0x41
-  HelloAck = 0x01
-  RlyTo = 0x02
-  DevLgnAck = 0x11
-  P2PReqAck = 0x21
-  ListenReqAck = 0x69
-  RlyHelloAck = 0x70  # always
-  RlyHelloAck2 = 0x71  # if len >1??
+    # From CSession_CtrlPkt_Proc incomplete
+    PunchTo = 0x40
+    PunchPkt = 0x41
+    HelloAck = 0x01
+    RlyTo = 0x02
+    DevLgnAck = 0x11
+    P2PReqAck = 0x21
+    ListenReqAck = 0x69
+    RlyHelloAck = 0x70  # always
+    RlyHelloAck2 = 0x71  # if len >1??
 
 
 class JsonCommands(Enum):

@@ -48,6 +48,7 @@ async def index(request):
         headers={'content-type': 'text/html'},
     )
 
+
 async def handle_commands(request):
     dev_id_str = request.match_info['dev_id']
     cmd = request.match_info['cmd']
