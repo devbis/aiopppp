@@ -6,6 +6,7 @@ from .const import JSON_COMMAND_NAMES, PTZ, JsonCommands, PacketType
 from .encrypt import ENC_METHODS
 from .packets import (
     JsonCmdPkt,
+    make_close_pkt,
     make_drw_ack_pkt,
     make_p2palive_ack_pkt,
     make_p2palive_pkt,
@@ -110,16 +111,20 @@ class Session(PacketQueueMixin, VideoQueueMixin):
     def __init__(self, dev, on_disconnect, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dev = dev
+        self.dev_properties = {}
         self.outgoing_command_idx = 0
         self.transport = None
         self.ready_counter = 0
-        self.info_requested = False
+        self._ready_for_commands = asyncio.Event()
+        self.device_is_ready = asyncio.Event()
         self.video_requested = False
         self.video_stale_at = None
         self.last_alive_pkt = datetime.datetime.now()
         self.last_drw_pkt = datetime.datetime.now()
         self.on_disconnect = on_disconnect
         self.main_task = None
+        self.drw_waiters = {}
+        self.cmd_waiters = {}
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -138,8 +143,14 @@ class Session(PacketQueueMixin, VideoQueueMixin):
 
     async def send(self, pkt):
         logger.debug(f"send> {pkt}")
+        if pkt.type == PacketType.Drw:
+            self.drw_waiters[pkt._cmd_idx] = asyncio.Future()
+
         encoded_pkt = ENC_METHODS[self.dev.encryption][1](bytes(pkt))
         self.transport.sendto(encoded_pkt, (self.dev.addr, self.dev.port))
+
+    async def send_close_pkt(self):
+        await self.send(make_close_pkt())
 
     async def handle_incoming_packet(self, pkt):
         if pkt.type == PacketType.PunchPkt:
@@ -147,13 +158,14 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         if pkt.type == PacketType.P2pRdy:
             self.ready_counter += 1
             if self.ready_counter == 5:
-                await self.login()
+                self._ready_for_commands.set()
         elif pkt.type == PacketType.P2PAlive:
             await self.send(make_p2palive_ack_pkt())
         elif pkt.type == PacketType.Drw:
             await self.handle_drw(pkt)
         elif pkt.type == PacketType.DrwAck:
             logger.info(f'Got DRW ACK {pkt}')
+            await self.handle_drw_ack(pkt)
         elif pkt.type == PacketType.P2PAliveAck:
             logger.info(f'Got P2PAlive ACK {pkt}')
         elif pkt.type == PacketType.Close:
@@ -165,7 +177,9 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         pass
 
     async def start_video(self):
+        await self.device_is_ready.wait()
         if not self.video_requested:
+            logger.info('Start video')
             self.last_drw_pkt = datetime.datetime.now()
             await self._request_video(1)
             self.video_requested = True
@@ -189,24 +203,64 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         pass
 
     async def handle_drw(self, drw_pkt):
-        logger.debug('handle_drw(idx=%s)', drw_pkt._cmd_idx)
+        logger.debug('handle_drw(idx=%s, chn=%s)', drw_pkt._cmd_idx, drw_pkt._channel)
         await self.send(make_drw_ack_pkt(drw_pkt))
+
+    async def handle_drw_ack(self, pkt):
+        cmd_idx_ack = int.from_bytes(pkt.get_payload()[4:6], 'big')
+        logger.debug('handle_drw_ack(idx=%s)', cmd_idx_ack)
+        # logger.info('waiters: %s', self.drw_waiters)
+        if cmd_idx_ack in self.drw_waiters:
+            # logger.info(
+            #     'Got ACK for %d, proceed waiters, total waiters: %d', cmd_idx_ack, len(self.drw_waiters),
+            # )
+            self.drw_waiters[cmd_idx_ack].set_result(pkt)
+            await asyncio.sleep(0)
+            del self.drw_waiters[cmd_idx_ack]
+
+    async def wait_ack(self, idx, timeout=5):
+        fut = self.drw_waiters.get(idx)
+        if fut:
+            logger.info(f'Waiting for ACK for {idx}')
+            try:
+                await asyncio.wait_for(fut, timeout=timeout)
+                logger.info('wait_ack(idx=%d) complete, waiters: %d', idx, len(self.drw_waiters))
+            except asyncio.TimeoutError:
+                self.drw_waiters.pop(idx, None)
+                raise
 
     async def handle_close(self, pkt):
         logger.info('%s requested close', self.dev.dev_id)
         self.stop()
+
+    async def setup_device(self):
+        pass
 
     async def _run(self):
         self.transport = await self.create_udp()
         self.start_packet_queue()
         self.start_video_queue()
 
+        # send punch packet
         await self.send(make_punch_pkt(self.dev.dev_id))
 
-        # send punch packet
-        while True:
-            await self.loop_step()
-            await asyncio.sleep(0.2)
+        try:
+            await self._ready_for_commands.wait()
+            try:
+                await self.setup_device()
+            except asyncio.TimeoutError:
+                logger.error('Timeout during device setup')
+                await self.send_close_pkt()
+                self.stop()
+                return
+
+            while True:
+                await self.loop_step()
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            logger.debug('send close packet to camera')
+            await self.send_close_pkt()
+            raise
 
     async def loop_step(self):
         logger.debug(f"iterate in Session for {self.dev.dev_id}")
@@ -237,20 +291,21 @@ class JsonSession(Session):
         'devmac': "0000"
     }
 
-    async def send_command(self, cmd, **kwargs):
+    async def send_command(self, cmd, *, with_response=False, **kwargs):
         data = {
             'pro': JSON_COMMAND_NAMES[cmd],
             'cmd': cmd.value,
         }
-        pkt = JsonCmdPkt(self.outgoing_command_idx, {**data, **kwargs, **self.COMMON_DATA})
+        pkt_idx = self.outgoing_command_idx
         self.outgoing_command_idx += 1
+        pkt = JsonCmdPkt(pkt_idx, {**data, **kwargs, **self.COMMON_DATA})
+        if with_response:
+            self.cmd_waiters[cmd.value] = asyncio.Future()
         await self.send(pkt)
+        return pkt_idx
 
     async def login(self):
-        await self.send_command(JsonCommands.CMD_CHECK_USER)
-        await asyncio.sleep(0.2)
-        await self.send_command(JsonCommands.CMD_GET_PARMS)
-        self.info_requested = True
+        return await self.send_command(JsonCommands.CMD_CHECK_USER, with_response=True)
 
     async def _request_video(self, mode):
         logger.info('Request video %s', mode)
@@ -283,6 +338,10 @@ class JsonSession(Session):
                 logger.warning('Got video data while stale')
                 self.video_stale_at = None
             self.video_chunk_queue.put_nowait((pkt_epoch, drw_pkt))
+        elif drw_pkt._channel == Channel.Audio:
+            pass
+        elif drw_pkt._channel == Channel.Command:
+            await self.handle_incoming_command_packet(drw_pkt)
 
     async def handle_incoming_video_packet(self, pkt_epoch, pkt):
         video_payload = pkt.get_drw_payload()
@@ -299,6 +358,40 @@ class JsonSession(Session):
             self.video_received[video_chunk_idx] = video_payload
         await self.process_video_frame()
 
+    async def handle_incoming_command_packet(self, drw_pkt):
+        if isinstance(drw_pkt, JsonCmdPkt):
+            response = drw_pkt.json_payload
+            if response['cmd'] in self.cmd_waiters:
+                # logger.debug('Got awaited response %s', response)
+                self.cmd_waiters[response['cmd']].set_result(response)
+                del self.cmd_waiters[response['cmd']]
+
+    async def wait_cmd_result(self, cmd, timeout=5):
+        fut = self.cmd_waiters.get(cmd.value)
+        if fut:
+            res = await asyncio.wait_for(fut, timeout=timeout)
+            logger.debug('Got command result %s', res)
+            return res
+        return {'result': -1}
+
+    async def setup_device(self):
+        idx = await self.login()
+        await self.wait_ack(idx)
+        if (await self.wait_cmd_result(JsonCommands.CMD_CHECK_USER))['result'] != 0:
+            raise RuntimeError('Login failed')
+        idx = await self.send_command(JsonCommands.CMD_GET_PARMS, with_response=True)
+        # logger.debug('Waiting for params ack')
+        await self.wait_ack(idx)
+
+        cam_properties = await self.wait_cmd_result(JsonCommands.CMD_GET_PARMS)
+        if cam_properties['result'] != 0:
+            raise RuntimeError('Get properties failed')
+        for f in ('cmd', 'result'):
+            del cam_properties[f]
+        self.dev_properties = cam_properties
+        logger.info('Camera properties: %s', cam_properties)
+        self.device_is_ready.set()
+
     async def loop_step(self):
         if (
             self.video_requested and not self.video_stale_at and
@@ -310,37 +403,45 @@ class JsonSession(Session):
         if self.video_stale_at and (datetime.datetime.now() - self.video_stale_at).total_seconds() > 10:
             # camera disconnected
             logger.warning('No video for 10 seconds. Disconnecting')
+            await self.send_close_pkt()
             self.stop()
         await super().loop_step()
 
     async def control(self, **kwargs):
-        await self.send_command(JsonCommands.CMD_DEV_CONTROL, **kwargs)
+        idx = await self.send_command(JsonCommands.CMD_DEV_CONTROL, **kwargs)
+        await self.wait_ack(idx)
 
     async def toggle_lamp(self, value):
         await self.control(lamp=1 if value else 0)
 
     async def toggle_whitelight(self, value, **kwargs):
         logger.info('%s: toggle white light = %s', self.dev.dev_id, value)
-        await self.send_command(JsonCommands.CMD_SET_WHITELIGHT, status=value)
+        idx = await self.send_command(JsonCommands.CMD_SET_WHITELIGHT, status=value)
+        await self.wait_ack(idx)
 
     async def toggle_ir(self, value):
         logger.info('%s: toggle IR = %s', self.dev.dev_id, value)
-        await self.control(icut=1 if value else 0)
+        idx = await self.control(icut=1 if value else 0)
+        await self.wait_ack(idx)
 
     async def rotate_start(self, value):
         logger.info('%s: rotate_start %s', self.dev.dev_id, value)
         value = PTZ[f'{value.upper()}_START'].value
-        await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value)
+        idx = await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value)
+        await self.wait_ack(idx)
 
     async def rotate_stop(self, **kwargs):
         logger.info('%s: rotate_stop', self.dev.dev_id)
+        indexes = []
         for value in [PTZ.LEFT_STOP, PTZ.RIGHT_STOP, PTZ.DOWN_STOP, PTZ.UP_STOP]:
-            await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value.value)
+            indexes.append(await self.send_command(JsonCommands.CMD_PTZ_CONTROL, parms=0, value=value.value))
             await asyncio.sleep(0.05)
+
+        await asyncio.gather(*[self.wait_ack(idx) for idx in indexes])
 
     async def step_rotate(self, value):
         await self.rotate_start(value)
-        await asyncio.sleep(0.2)
+        # await asyncio.sleep(0.2)
         await self.rotate_stop()
 
     async def reboot(self, **kwargs):

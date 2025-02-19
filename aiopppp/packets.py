@@ -115,6 +115,10 @@ def make_p2palive_ack_pkt():
     return Packet(PacketType.P2PAliveAck, b'')
 
 
+def make_close_pkt():
+    return Packet(PacketType.Close, b'')
+
+
 def create_drw(session, user, data):
     pass
 
