@@ -285,11 +285,23 @@ class Session(PacketQueueMixin, VideoQueueMixin):
 
 
 class JsonSession(Session):
-    COMMON_DATA = {
-        'user': "admin",
-        'pwd': "6666",
-        'devmac': "0000"
-    }
+    """
+    Session for JSON-based protocol
+    """
+    DEFAULT_LOGIN = 'admin'
+    DEFAULT_PASSWORD = '6666'
+
+    def __init__(self, *args, login='', password='', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.auth_login = login or self.DEFAULT_LOGIN
+        self.auth_password = password or self.DEFAULT_PASSWORD
+
+    def get_common_data(self):
+        return {
+            'user': self.auth_login,
+            'pwd': self.auth_password,
+            'devmac': '0000'
+        }
 
     async def send_command(self, cmd, *, with_response=False, **kwargs):
         data = {
@@ -298,7 +310,7 @@ class JsonSession(Session):
         }
         pkt_idx = self.outgoing_command_idx
         self.outgoing_command_idx += 1
-        pkt = JsonCmdPkt(pkt_idx, {**data, **kwargs, **self.COMMON_DATA})
+        pkt = JsonCmdPkt(pkt_idx, {**data, **kwargs, **self.get_common_data()})
         if with_response:
             self.cmd_waiters[cmd.value] = asyncio.Future()
         await self.send(pkt)

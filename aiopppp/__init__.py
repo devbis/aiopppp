@@ -28,8 +28,9 @@ async def connect(ip_address: str, timeout: int = 20) -> Device:
     raise TimeoutError("Timeout connecting to the camera")
 
 
-def make_session(device: Device, on_device_lost: Callable[[Device], None]) -> Session:
+def make_session(device: Device, on_device_lost: Callable[[Device], None], login: str = '', password: str = '') \
+        -> Session:
     """Create a session for the camera."""
     if device.is_json:
-        return JsonSession(device, on_disconnect=on_device_lost)
+        return JsonSession(device, on_disconnect=on_device_lost, login=login, password=password)
     raise NotImplementedError("Only JSON protocol is supported")
