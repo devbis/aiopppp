@@ -123,14 +123,16 @@ async def start_web_server(port=4000):
     app.router.add_get('/{dev_id}/v', stream_video)
     app.router.add_post('/{dev_id}/c/{cmd}', handle_commands)
 
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(app, handle_signals=True)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', port, reuse_port=True)
     try:
         logger.info(f'Starting web server on port {port}')
         await site.start()
-        while True:
-            await asyncio.sleep(1)
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            pass
     finally:
         logger.info('Shutting down web server')
         await runner.cleanup()
