@@ -83,7 +83,8 @@ class Discovery:
                 self.devices[device.dev_id] = device
                 callback(device)
 
-    async def discover(self, callback):
+    async def discover(self, callback, period=10):
+        assert period > 1, 'need to wait for camera response more than 1 second'
         logger.info('start discovery')
         initial_port = self.local_port or randint(0x800, 0xfff0)
 
@@ -95,8 +96,7 @@ class Discovery:
                 for packet in possible_discovery_packets:
                     logger.debug('broadcast> %s', packet.hex(' '))
                     self.transport.sendto(packet, (self.remote_addr, self.remote_port))
-
-                await asyncio.sleep(10)
+                await asyncio.sleep(period)
         finally:
             logger.warning('end discovery')
             self.transport.close()
