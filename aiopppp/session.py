@@ -125,6 +125,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.main_task = None
         self.drw_waiters = {}
         self.cmd_waiters = {}
+        self._is_stopping = False
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -274,7 +275,10 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         return self.main_task
 
     def stop(self):
+        if self._is_stopping:
+            return
         logger.debug('Stopping session')
+        self._is_stopping = True
         self.transport.close()
         self.ready_counter = 0
         self.process_packet_task.cancel()
@@ -282,6 +286,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         if self.on_disconnect:
             self.on_disconnect(self.dev)
         self.main_task.cancel()
+        self._is_stopping = False
 
 
 class JsonSession(Session):
