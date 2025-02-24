@@ -1,12 +1,13 @@
 # aiopppp
 
-**aiopppp** is an asynchronous Python library designed to simplify connecting to and interacting with cameras that utilize the Peer-to-Peer Protocol (PPPP). 
+**aiopppp** is an asynchronous Python library designed to simplify connecting to and interacting with cameras that 
+utilize the Peer-to-Peer Protocol (PPPP) which is implemented in some cheap cameras (A9, X5, etc.) 
 This library enables seamless communication with compatible cameras for live video streaming,
 capturing snapshots, or configuring camera settings, all using asyncio for efficient performance.
 
 ## Features
 
-- Initial camera discovery (plain, and encoded)
+- Initial camera discovery (plain (not implemented yet), and encoded)
 - Asynchronous peer-to-peer connections with PPPP-enabled cameras using JSON control protocol
 - Stream live video feeds directly from the camera.
 - Remote camera rotation
@@ -36,27 +37,42 @@ Here’s an example of how to use the library:
 
 ```python
 import asyncio
+from aiopppp import connect, make_session
+
+async def main():
+    device = await connect("192.168.1.2", timeout=20)
+    disconnected = asyncio.Event()
+    session = make_session(device, on_device_lost=lambda lost_device: disconnected.set())
+    session.start()
+    await session.device_is_ready.wait()
+    print("Connected to the device")
+    print("Device info:", session.dev_properties)
+    session.stop()
+    await disconnected.wait()
+    print("Disconnected from the device")
+    
+    
+asyncio.run(main())
+```
+
+Or create discovery class and process found devices manually:
+```python
+import asyncio
 from aiopppp import Discovery, JsonSession
 
-async def on_device_found(device):
+def on_disconnect():
+    print("Disconnected from the device")
+
+def on_device_found(device):
     print(f"Found device: {device}")
-    session = JsonSession(device)
+    session = JsonSession(device, on_disconnect=on_disconnect)
     session.start()
 
-    while True:
-        frame = await session.frame_buffer.get()
-        
-        # Do something with the frame
-        # await response.write(b'--frame\r\nContent-Type: image/jpeg\r\n\r\n')
-        # await response.write(frame.data)
-        print(f"Frame received: {frame}")
-        
 async def main():
-    discovery = Discovery()
+    discovery = Discovery(remote_addr='255.255.255.255')
     await discovery.discover(on_device_found)
 
     
-# Run the async main function
 asyncio.run(main())
 ```
 
