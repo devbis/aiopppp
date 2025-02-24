@@ -5,7 +5,7 @@ from random import randint
 from .const import CAM_MAGIC, PacketType
 from .encrypt import ENC_METHODS
 from .packets import Packet, parse_packet
-from .types import Device
+from .types import Device, Encryption
 
 DISCOVERY_PORT = 32108
 DEFAULT_DISCOVERY_ADDRESS = '255.255.255.255'
@@ -77,6 +77,7 @@ class Discovery:
                 addr=addr[0],
                 port=addr[1],
                 encryption=encryption,
+                is_json=encryption != Encryption.NONE,
             )
 
             if device.dev_id not in self.devices:
