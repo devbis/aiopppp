@@ -20,8 +20,6 @@ def on_device_found(device):
 def on_device_lost(device):
     logger.warning('Device %s lost', device.dev_id)
     SESSIONS.pop(device.dev_id.dev_id, None)
-    if discovery:
-        discovery.delete_device(device)
 
 
 async def amain(remote_addr, local_port):
