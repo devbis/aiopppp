@@ -86,7 +86,7 @@ class Discovery:
 
     async def discover(self, callback, period=10):
         assert period > 1, 'need to wait for camera response more than 1 second'
-        logger.info('start discovery')
+        logger.info('Start discovery on %s:%d', self.remote_addr, self.remote_port)
         initial_port = self.local_port or randint(0x800, 0xfff0)
 
         self.transport = await create_udp_server(initial_port, lambda data, addr: self.on_receive(data, addr, callback))
@@ -99,7 +99,7 @@ class Discovery:
                     self.transport.sendto(packet, (self.remote_addr, self.remote_port))
                 await asyncio.sleep(period)
         finally:
-            logger.warning('end discovery')
+            logger.info('Stop discovery')
             self.transport.close()
             self.transport = None
 

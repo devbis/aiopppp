@@ -19,9 +19,7 @@ def on_device_found(device):
 
 def on_device_lost(device):
     logger.warning('Device %s lost', device.dev_id)
-    s = SESSIONS.pop(device.dev_id.dev_id, None)
-    if s:
-        s.main_task.cancel()
+    SESSIONS.pop(device.dev_id.dev_id, None)
     if discovery:
         discovery.delete_device(device)
 
@@ -29,7 +27,12 @@ def on_device_lost(device):
 async def amain(remote_addr, local_port):
     global discovery
     discovery = Discovery(remote_addr=remote_addr)
-    await asyncio.gather(discovery.discover(on_device_found), start_web_server())
+    try:
+        await asyncio.gather(discovery.discover(on_device_found), start_web_server())
+    finally:
+        for dev_id, session in list(SESSIONS.items()):
+            session.stop()
+        SESSIONS.clear()
 
 
 def main():
