@@ -38,7 +38,6 @@ async def create_udp_server(port, on_receive):
 
 class Discovery:
     def __init__(self, remote_addr=DEFAULT_DISCOVERY_ADDRESS, remote_port=DISCOVERY_PORT, local_port=0):
-        self.devices = {}
         self.transport = None
         self.remote_addr = remote_addr
         self.remote_port = remote_port
@@ -79,10 +78,7 @@ class Discovery:
                 encryption=encryption,
                 is_json=encryption != Encryption.NONE,
             )
-
-            if device.dev_id not in self.devices:
-                self.devices[device.dev_id] = device
-                callback(device)
+            callback(device)
 
     async def discover(self, callback, period=10):
         assert period > 1, 'need to wait for camera response more than 1 second'
@@ -102,7 +98,3 @@ class Discovery:
             logger.info('Stop discovery')
             self.transport.close()
             self.transport = None
-
-    def delete_device(self, device):
-        self.devices.pop(device.dev_id, None)
-        logger.debug(f'deleted device {device.dev_id}')
