@@ -125,7 +125,6 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.main_task = None
         self.drw_waiters = {}
         self.cmd_waiters = {}
-        self._is_stopping = False
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -165,10 +164,10 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         elif pkt.type == PacketType.Drw:
             await self.handle_drw(pkt)
         elif pkt.type == PacketType.DrwAck:
-            logger.info(f'Got DRW ACK {pkt}')
+            logger.debug(f'Got DRW ACK {pkt}')
             await self.handle_drw_ack(pkt)
         elif pkt.type == PacketType.P2PAliveAck:
-            logger.info(f'Got P2PAlive ACK {pkt}')
+            logger.debug(f'Got P2PAlive ACK {pkt}')
         elif pkt.type == PacketType.Close:
             await self.handle_close(pkt)
         else:
@@ -222,17 +221,17 @@ class Session(PacketQueueMixin, VideoQueueMixin):
     async def wait_ack(self, idx, timeout=5):
         fut = self.drw_waiters.get(idx)
         if fut:
-            logger.info(f'Waiting for ACK for {idx}')
+            logger.debug(f'Waiting for ACK for {idx}')
             try:
                 await asyncio.wait_for(fut, timeout=timeout)
-                logger.info('wait_ack(idx=%d) complete, waiters: %d', idx, len(self.drw_waiters))
+                logger.debug('wait_ack(idx=%d) complete, waiters: %d', idx, len(self.drw_waiters))
             except asyncio.TimeoutError:
                 self.drw_waiters.pop(idx, None)
                 raise
 
     async def handle_close(self, pkt):
         logger.info('%s requested close', self.dev.dev_id)
-        self.stop()
+        self._on_device_lost()
 
     async def setup_device(self):
         pass
@@ -247,12 +246,13 @@ class Session(PacketQueueMixin, VideoQueueMixin):
 
         try:
             await self._ready_for_commands.wait()
+            logger.info('Connected to %s, json=%s', self.dev.dev_id, self.dev.is_json)
             try:
                 await self.setup_device()
             except asyncio.TimeoutError:
                 logger.error('Timeout during device setup')
                 await self.send_close_pkt()
-                self.stop()
+                self._on_device_lost()
                 return
 
             while True:
@@ -274,19 +274,19 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.main_task = asyncio.create_task(self._run())
         return self.main_task
 
+    def _on_device_lost(self):
+        logger.warning('Device %s lost', self.dev.dev_id)
+        self.stop()
+        if self.on_disconnect:
+            self.on_disconnect(self.dev)
+
     def stop(self):
-        if self._is_stopping:
-            return
-        logger.debug('Stopping session')
-        self._is_stopping = True
+        logger.info('Disconnecting from %s', self.dev.dev_id)
         self.transport.close()
         self.ready_counter = 0
         self.process_packet_task.cancel()
         self.process_video_task.cancel()
-        if self.on_disconnect:
-            self.on_disconnect(self.dev)
         self.main_task.cancel()
-        self._is_stopping = False
 
 
 class JsonSession(Session):
@@ -421,7 +421,7 @@ class JsonSession(Session):
             # camera disconnected
             logger.warning('No video for 10 seconds. Disconnecting')
             await self.send_close_pkt()
-            self.stop()
+            self._on_device_lost()
         await super().loop_step()
 
     async def control(self, **kwargs):
