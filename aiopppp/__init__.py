@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from typing import Callable
 
 from .discover import Discovery  # noqa: F401
@@ -12,17 +13,23 @@ async def connect(ip_address: str, timeout: int = 20) -> Device:
     cam_device_fut = loop.create_future()
 
     def on_device_connect(device):
-        cam_device_fut.set_result(device)
+        if not cam_device_fut.done():
+            cam_device_fut.set_result(device)
 
     discovery = Discovery(ip_address)
+    task = loop.create_task(discovery.discover(on_device_connect))
     await asyncio.wait(
         [
-            loop.create_task(discovery.discover(on_device_connect)),
+            task,
             cam_device_fut,
         ],
         timeout=timeout,
         return_when=asyncio.FIRST_COMPLETED,
     )
+    if not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     if cam_device_fut.done():
         return cam_device_fut.result()
     raise TimeoutError("Timeout connecting to the camera")
