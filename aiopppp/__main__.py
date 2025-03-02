@@ -4,7 +4,7 @@ import logging
 
 from .discover import DEFAULT_DISCOVERY_ADDRESS, Discovery
 from .http_server import SESSIONS, start_web_server
-from .session import JsonSession
+from .session import make_session
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ discovery = None
 
 
 def on_device_found(device):
-    session = JsonSession(device, on_disconnect=on_device_lost)
+    session = make_session(device, on_device_lost=on_device_lost)
     SESSIONS[device.dev_id.dev_id] = session
     session.start()
 
