@@ -424,9 +424,10 @@ class JsonSession(Session):
             self._on_device_lost()
         await super().loop_step()
 
-    async def control(self, **kwargs):
+    async def control(self, no_ack=False, **kwargs):
         idx = await self.send_command(JsonCommands.CMD_DEV_CONTROL, **kwargs)
-        await self.wait_ack(idx)
+        if not no_ack:
+            await self.wait_ack(idx)
 
     async def toggle_lamp(self, value):
         await self.control(lamp=1 if value else 0)
@@ -463,7 +464,7 @@ class JsonSession(Session):
 
     async def reboot(self, **kwargs):
         logger.info('%s: reboot', self.dev.dev_id)
-        await self.control(reboot=1)
+        await self.control(reboot=1, no_ack=True)
 
     async def reset(self, **kwargs):
         """
