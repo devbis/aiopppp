@@ -5,7 +5,7 @@ from random import randint
 from .const import CAM_MAGIC, PacketType
 from .encrypt import ENC_METHODS
 from .packets import Packet, parse_packet
-from .types import Device, Encryption
+from .types import DeviceDescriptor, Encryption
 
 DISCOVERY_PORT = 32108
 DEFAULT_DISCOVERY_ADDRESS = '255.255.255.255'
@@ -71,7 +71,7 @@ class Discovery:
         if pkt.type == PacketType.PunchPkt:
             dev_id = pkt.as_object()
             logger.info(f'found device {dev_id}')
-            device = Device(
+            device = DeviceDescriptor(
                 dev_id=dev_id,
                 addr=addr[0],
                 port=addr[1],
@@ -81,7 +81,7 @@ class Discovery:
             callback(device)
 
     async def discover(self, callback, period=10):
-        assert period > 1, 'need to wait for camera response more than 1 second'
+        assert period >= 1, 'need to wait for camera response more than 1 second'
         logger.info('Start discovery on %s:%d', self.remote_addr, self.remote_port)
         initial_port = self.local_port or randint(0x800, 0xfff0)
 

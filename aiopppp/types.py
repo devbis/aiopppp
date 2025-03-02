@@ -32,7 +32,7 @@ class DeviceID:
         return f'{self.prefix}-{self.serial}-{self.suffix}'
 
 
-class Device:
+class DeviceDescriptor:
     def __init__(self, dev_id, addr, port, encryption=Encryption.NONE, is_json=False):
         self.dev_id = dev_id
         self.addr = addr

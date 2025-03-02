@@ -1,6 +1,8 @@
 import asyncio
 import datetime
 import logging
+from enum import Enum
+from typing import Callable
 
 from .const import JSON_COMMAND_NAMES, PTZ, JsonCommands, PacketType
 from .encrypt import ENC_METHODS
@@ -13,9 +15,15 @@ from .packets import (
     make_punch_pkt,
     parse_packet,
 )
-from .types import Channel, VideoFrame
+from .types import Channel, DeviceDescriptor, VideoFrame
 
 logger = logging.getLogger(__name__)
+
+
+class State(Enum):
+    DISCONNECTED = 0
+    CONNECTED = 1
+    READY = 2
 
 
 class SessionUDPProtocol(asyncio.DatagramProtocol):
@@ -110,6 +118,8 @@ class VideoQueueMixin:
 class Session(PacketQueueMixin, VideoQueueMixin):
     def __init__(self, dev, on_disconnect, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.state = State.DISCONNECTED
         self.dev = dev
         self.dev_properties = {}
         self.outgoing_command_idx = 0
@@ -117,14 +127,17 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.ready_counter = 0
         self._ready_for_commands = asyncio.Event()
         self.device_is_ready = asyncio.Event()
-        self.video_requested = False
+        self.is_video_requested = False
         self.video_stale_at = None
-        self.last_alive_pkt = datetime.datetime.now()
-        self.last_drw_pkt = datetime.datetime.now()
+        self.last_alive_pkt_at = datetime.datetime.now()
+        self.last_drw_pkt_at = datetime.datetime.now()
         self.on_disconnect = on_disconnect
         self.main_task = None
         self.drw_waiters = {}
         self.cmd_waiters = {}
+
+    def __str__(self):
+        return f'Session({self.dev.dev_id}) ({self.state.name})'
 
     async def create_udp(self):
         loop = asyncio.get_running_loop()
@@ -178,15 +191,15 @@ class Session(PacketQueueMixin, VideoQueueMixin):
 
     async def start_video(self):
         await self.device_is_ready.wait()
-        if not self.video_requested:
+        if not self.is_video_requested:
             logger.info('Start video')
-            self.last_drw_pkt = datetime.datetime.now()
+            self.last_drw_pkt_at = datetime.datetime.now()
             await self._request_video(1)
-            self.video_requested = True
+            self.is_video_requested = True
 
     async def stop_video(self):
-        if self.video_requested:
-            self.video_requested = False
+        if self.is_video_requested:
+            self.is_video_requested = False
             self.video_stale_at = None
             self.video_received = {}
             self.video_boundaries = set()
@@ -247,6 +260,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         try:
             await self._ready_for_commands.wait()
             logger.info('Connected to %s, json=%s', self.dev.dev_id, self.dev.is_json)
+            self.state = State.CONNECTED
             try:
                 await self.setup_device()
             except asyncio.TimeoutError:
@@ -259,18 +273,20 @@ class Session(PacketQueueMixin, VideoQueueMixin):
                 await self.loop_step()
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
-            logger.debug('send close packet to camera')
-            await self.send_close_pkt()
+            if self.transport:
+                logger.debug('Session main task cancelled, sending close packet')
+                await self.send_close_pkt()
             raise
 
     async def loop_step(self):
         logger.debug(f"iterate in Session for {self.dev.dev_id}")
-        if (datetime.datetime.now() - self.last_alive_pkt).total_seconds() > 10:
-            self.last_alive_pkt = datetime.datetime.now()
+        if (datetime.datetime.now() - self.last_alive_pkt_at).total_seconds() > 10:
+            self.last_alive_pkt_at = datetime.datetime.now()
             logger.info('Send P2PAlive')
             await self.send(make_p2palive_pkt())
 
     def start(self):
+        self.device_is_ready.clear()
         self.main_task = asyncio.create_task(self._run())
         return self.main_task
 
@@ -281,12 +297,20 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             self.on_disconnect(self.dev)
 
     def stop(self):
-        logger.info('Disconnecting from %s', self.dev.dev_id)
-        self.transport.close()
+        if self.state != State.CONNECTED:
+            raise RuntimeError('Session is not started')
+        logger.info('Stopping task for %s', self.dev.dev_id)
+        self.device_is_ready.set()
         self.ready_counter = 0
         self.process_packet_task.cancel()
         self.process_video_task.cancel()
         self.main_task.cancel()
+        self.transport.close()
+        self.transport = None
+        self.state = State.DISCONNECTED
+
+    async def reboot(self):
+        raise NotImplementedError
 
 
 class JsonSession(Session):
@@ -337,7 +361,7 @@ class JsonSession(Session):
 
     async def handle_drw(self, drw_pkt):
         await super().handle_drw(drw_pkt)
-        self.last_drw_pkt = datetime.datetime.now()
+        self.last_drw_pkt_at = datetime.datetime.now()
 
         # # 0x10000 - max number of chunks in one epoch,we need to keep order of chunks
         pkt_epoch = self._get_drw_epoch(drw_pkt)
@@ -411,10 +435,10 @@ class JsonSession(Session):
 
     async def loop_step(self):
         if (
-            self.video_requested and not self.video_stale_at and
-            (datetime.datetime.now() - self.last_drw_pkt).total_seconds() > 5
+            self.is_video_requested and not self.video_stale_at and
+            (datetime.datetime.now() - self.last_drw_pkt_at).total_seconds() > 5
         ):
-            self.video_stale_at = self.last_drw_pkt
+            self.video_stale_at = self.last_drw_pkt_at
             logger.info('No video for 5 seconds. Re-request video ')
             await self._request_video(1)
         if self.video_stale_at and (datetime.datetime.now() - self.video_stale_at).total_seconds() > 10:
@@ -487,3 +511,11 @@ class SharedFrameBuffer:
         async with self.condition:
             await self.condition.wait()
             return self.latest_frame
+
+
+def make_session(device: DeviceDescriptor, on_device_lost: Callable[[DeviceDescriptor], None],
+                 login: str = '', password: str = '') -> Session:
+    """Create a session for the camera."""
+    if device.is_json:
+        return JsonSession(device, on_disconnect=on_device_lost, login=login, password=password)
+    raise NotImplementedError("Only JSON protocol is supported")

@@ -98,7 +98,7 @@ async def stream_video(request):
 
     await response.prepare(request)
     session = SESSIONS[dev_id_str]
-    if not session.video_requested:
+    if not session.is_video_requested:
         await session.start_video()
 
     frame_buffer = session.frame_buffer
