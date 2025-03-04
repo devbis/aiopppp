@@ -101,7 +101,7 @@ class VideoQueueMixin:
             else:
                 complete = False
                 completeness += '_'
-        logger.info(f".. completeness: {completeness}")
+        logger.debug(f".. completeness: {completeness}")
 
         if complete:
             self.last_video_frame = index
