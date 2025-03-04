@@ -18,21 +18,23 @@ async def find_device(ip_address: str, timeout: int = 20) -> DeviceDescriptor:
 
     discovery = Discovery(ip_address)
     task = loop.create_task(discovery.discover(on_device_connect, period=1))
-    await asyncio.wait(
-        [
-            task,
-            cam_device_fut,
-        ],
-        timeout=timeout,
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-    if not task.done():
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    if cam_device_fut.done():
-        return cam_device_fut.result()
-    raise TimeoutError("Timeout connecting to the camera")
+    try:
+        await asyncio.wait(
+            [
+                task,
+                cam_device_fut,
+            ],
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+    finally:
+        if not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        if cam_device_fut.done():
+            return cam_device_fut.result()
+        raise TimeoutError("Timeout connecting to the camera")
 
 
 class Device:
@@ -45,15 +47,11 @@ class Device:
         self.password = password
         self.enable_reconnect = False
 
-    async def find_device(self, timeout: int = 15):
-        self.descriptor = await find_device(self.ip_address, timeout)
-        return self.descriptor
-
     async def connect(self, timeout: int = 15):
         if self.is_connected:
             raise AlreadyConnectedError("Already connected to the camera")
 
-        await self.find_device(timeout=timeout)
+        self.descriptor = await find_device(self.ip_address, timeout=timeout)
 
         self._session = make_session(
             device=self.descriptor,
@@ -62,17 +60,16 @@ class Device:
             on_device_lost=lambda dev: self.on_device_lost(),
         )
         self._session.start()
-        try:
-            await asyncio.wait(
-                [
-                    asyncio.ensure_future(self._session.device_is_ready.wait()),
-                    asyncio.shield(self._session.main_task),
-                ], timeout=timeout,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if self._session and self._session.main_task and self._session.main_task.done():
-                await self._session.main_task
-        except asyncio.TimeoutError:
+        done, _ = await asyncio.wait(
+            [
+                asyncio.ensure_future(self._session.device_is_ready.wait()),
+                asyncio.shield(self._session.main_task),
+            ], timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if self._session and self._session.main_task and self._session.main_task.done():
+            await self._session.main_task
+        if not done:  # timeout
             if self.is_connected:
                 await self.close()
             raise TimeoutError("Timeout connecting to the camera")
