@@ -2,16 +2,9 @@ import asyncio
 import contextlib
 
 from .discover import Discovery
+from .exceptions import AlreadyConnectedError, NotConnectedError
 from .session import Session, make_session
 from .types import DeviceDescriptor
-
-
-class NotConnectedError(Exception):
-    """Error when the camera is not connected."""
-
-
-class AlreadyConnectedError(Exception):
-    """Error when the camera is not connected."""
 
 
 async def find_device(ip_address: str, timeout: int = 20) -> DeviceDescriptor:
@@ -62,10 +55,23 @@ class Device:
 
         await self.find_device(timeout=timeout)
 
-        self._session = make_session(device=self.descriptor, on_device_lost=lambda dev: self.on_device_lost())
+        self._session = make_session(
+            device=self.descriptor,
+            login=self.username,
+            password=self.password,
+            on_device_lost=lambda dev: self.on_device_lost(),
+        )
         self._session.start()
         try:
-            await asyncio.wait_for(self._session.device_is_ready.wait(), timeout=timeout)
+            await asyncio.wait(
+                [
+                    asyncio.ensure_future(self._session.device_is_ready.wait()),
+                    asyncio.shield(self._session.main_task),
+                ], timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if self._session and self._session.main_task and self._session.main_task.done():
+                await self._session.main_task
         except asyncio.TimeoutError:
             if self.is_connected:
                 await self.close()

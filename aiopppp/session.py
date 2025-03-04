@@ -6,6 +6,7 @@ from typing import Callable
 
 from .const import JSON_COMMAND_NAMES, PTZ, JsonCommands, PacketType
 from .encrypt import ENC_METHODS
+from .exceptions import AuthError, CommandResultError
 from .packets import (
     JsonCmdPkt,
     make_close_pkt,
@@ -418,15 +419,16 @@ class JsonSession(Session):
     async def setup_device(self):
         idx = await self.login()
         await self.wait_ack(idx)
-        if (await self.wait_cmd_result(JsonCommands.CMD_CHECK_USER))['result'] != 0:
-            raise RuntimeError('Login failed')
+        auth_result = await self.wait_cmd_result(JsonCommands.CMD_CHECK_USER)
+        if auth_result['result'] != 0:
+            raise AuthError(f'Login failed: {auth_result}')
         idx = await self.send_command(JsonCommands.CMD_GET_PARMS, with_response=True)
         # logger.debug('Waiting for params ack')
         await self.wait_ack(idx)
 
         cam_properties = await self.wait_cmd_result(JsonCommands.CMD_GET_PARMS)
         if cam_properties['result'] != 0:
-            raise RuntimeError('Get properties failed')
+            raise CommandResultError(f'Get properties failed: {cam_properties}')
         for f in ('cmd', 'result'):
             del cam_properties[f]
         self.dev_properties = cam_properties
