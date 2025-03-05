@@ -28,6 +28,43 @@ class PacketType(Enum):
     RlyHelloAck2 = 0x71  # if len >1??
 
 
+class BinaryCommands(Enum):
+    ConnectUser = 0x2010
+    ConnectUserAck = 0x2011
+    CloseSession = 0x3110
+    CloseSessionAck = 0x3111
+    DevStatus = 0x0810  # CMD_SYSTEM_STATUS_GET
+    DevStatusAck = 0x0811
+    WifiSettingsSet = 0x0160  # CMD_NET_WIFISETTING_SET
+    WifiSettings = 0x0260  # CMD_NET_WIFISETTING_GET
+    WifiSettingsAck = 0x0261
+    ListWifi = 0x0360  # CMD_NET_WIFI_SCAN
+    ListWifiAck = 0x0361
+    StartVideo = 0x1030  # CMD_PEER_LIVEVIDEO_START
+    StartVideoAck = 0x1031
+    StopVideo = 0x1130  # CMD_PEER_LIVEVIDEO_STOP
+    Shutdown = 0x1010  # CMD_SYSTEM_SHUTDOWN
+    Reboot = 0x1110  # CMD_SYSTEM_REBOOT
+    VideoParamSet = 0x1830  # CMD_PEER_VIDEOPARAM_SET
+    VideoParamSetAck = 0x1831
+    VideoParamGet = 0x1930  # CMD_PEER_VIDEOPARAM_GET
+    IRToggle = 0x0a30  # CMD_PEER_IRCUT_ONOFF
+
+
+CC_DEST = {
+    BinaryCommands.ConnectUser: 0xff00,
+    BinaryCommands.DevStatus: 0x0000,
+    BinaryCommands.StartVideo: 0x0000,
+    BinaryCommands.StopVideo: 0x0000,  # ????
+    BinaryCommands.ListWifi: 0x0000,
+    BinaryCommands.WifiSettings: 0x0000,
+
+    BinaryCommands.ListWifiAck: 0xaa55,
+    BinaryCommands.ConnectUserAck: 0xaa55,
+    BinaryCommands.DevStatusAck: 0xaa55,
+}
+
+
 class JsonCommands(Enum):
     CMD_SET_CYPUSH = 1
     CMD_CHECK_USER = 100
