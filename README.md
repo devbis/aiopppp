@@ -33,23 +33,70 @@ pip install aiopppp
 
 ## Quick Start
 
+### Prerequisites
+
+The camera must be connected to WiFi using its mobile app. On the first start the camera creates WiFi access 
+point with the name like `DGXX-XXXX` or a different name. And it should be used for configuring WiFi settings. 
+After it is connected to you network you can use its IP address to connect to it.
+
+The camera should use UDP port 32108 for discovery. 
+There are cameras with the same form-factor with open port 20190 which is not supported. 
+It uses either a different protocol or a different encryption.
+
+### Usage
+
 Here’s an example of how to use the library:
+
+Using high-level device:
+```python
+import asyncio
+from aiopppp import Device
+
+async def main():
+    async with Device("192.168.1.2") as device:
+        print("Connected to the device")
+        print("Device info:", device.properties)
+        await device.start_video()
+        await asyncio.sleep(10)
+        await device.stop_video()
+    print("Disconnected from the device")
+        
+    # or 
+    
+    device = Device("192.168.1.2")
+    await device.connect()
+    print("Device info:", device.properties)
+    await device.close()
+    
+    
+asyncio.run(main())
+
+```
+
+Or low-level session connections:
 
 ```python
 import asyncio
-from aiopppp import connect, make_session
+from aiopppp import find_device
+from aiopppp.device import make_session
+from contextlib import suppress
 
 async def main():
-    device = await connect("192.168.1.2", timeout=20)
+    device = await find_device("192.168.1.2", timeout=20)
     disconnected = asyncio.Event()
     session = make_session(device, on_device_lost=lambda lost_device: disconnected.set())
     session.start()
-    await session.device_is_ready.wait()
+    await asyncio.wait([session.device_is_ready.wait(), session.main_task], return_when=asyncio.FIRST_COMPLETED)
+    if session.main_task.done():
+        await session.main_task
+        return 
     print("Connected to the device")
     print("Device info:", session.dev_properties)
     session.stop()
-    await disconnected.wait()
+    with suppress(asyncio.CancelledError):
+        await session.main_task
     print("Disconnected from the device")
+    
     
     
 asyncio.run(main())
@@ -100,3 +147,17 @@ Contributions are welcome! Feel free to submit issues or pull requests on [GitHu
 ## License
 
 This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for details.
+
+
+## Thanks
+
+This library is inspired and used protocol description from the following projects:
+
+Protocol client implementations:
+
+- https://github.com/DavidVentura/cam-reverse
+- https://github.com/magicus/PPPP
+- https://github.com/hyc/a9serv
+
+- WireShark dissector for the PPPP protocol https://github.com/magicus/pppp-dissector
+- Discussion at https://community.home-assistant.io/t/popular-a9-mini-wi-fi-camera-the-ha-challenge/230108
