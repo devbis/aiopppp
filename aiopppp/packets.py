@@ -2,7 +2,7 @@ import json
 import logging
 import struct
 
-from .const import CAM_MAGIC, PacketType
+from .const import CAM_MAGIC, CC_DEST, PacketType
 from .types import Channel, DeviceID
 
 
@@ -68,6 +68,42 @@ class JsonCmdPkt(DrwPkt):
     def get_drw_payload(self):
         payload = json.dumps(self.json_payload).encode('utf-8')
         return self.preamble + len(payload).to_bytes(4, 'little') + payload
+
+
+def xq_bytes_encode(data, shift):
+    new_buf = bytes(b - 1 if b & 1 else b + 1 for b in data)
+    return bytes(new_buf[shift:] + new_buf[:shift])
+
+
+def xq_bytes_decode(data, shift):
+    new_buf = bytes(b - 1 if b & 1 else b + 1 for b in data)
+    return bytes(new_buf[-shift:] + new_buf[:-shift])
+
+
+class BinaryCmdPkt(DrwPkt):
+    START_CMD = b'\x11\x0a'
+
+    def __init__(self, cmd_idx, command, cmd_payload, ticket):
+        super().__init__(0, cmd_idx, None)
+        self.command = command
+        self.cmd_payload = cmd_payload
+        self.ticket = ticket
+
+    def __str__(self):
+        return f'{self.type.name}({self.drw_str()}): {self.cmd_payload}]'
+
+    def get_drw_payload(self):
+        data = struct.pack(
+            '>2sH2sH4s',
+            self.START_CMD,
+            self.command.value,
+            len(self.cmd_payload).to_bytes(4, 'little'),
+            CC_DEST[self.command],
+            self.ticket,
+        )
+        if self.cmd_payload and len(self.cmd_payload) > 4:
+            data += xq_bytes_encode(self.cmd_payload, 4)
+        return data
 
 
 def parse_punch_pkt(data):
