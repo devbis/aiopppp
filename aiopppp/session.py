@@ -736,6 +736,5 @@ class SharedFrameBuffer:
 def make_session(device: DeviceDescriptor, on_device_lost: Callable[[DeviceDescriptor], None],
                  login: str = '', password: str = '') -> Session:
     """Create a session for the camera."""
-    if device.is_json:
-        return JsonSession(device, on_disconnect=on_device_lost, login=login, password=password)
-    raise NotImplementedError("Only JSON protocol is supported")
+    session_class = JsonSession if device.is_json else BinarySession
+    return session_class(device, on_disconnect=on_device_lost, login=login, password=password)
