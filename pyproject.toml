@@ -3,8 +3,8 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
+dynamic = ["version"]
 name = "aiopppp"
-version = "0.1.0"
 description = "An asynchronous Python library for connecting to PPPP-enabled cameras."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -30,6 +30,9 @@ classifiers = [
 dependencies = [
     "aiohttp",
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "aiopppp.__version__"}
 
 [project.urls]
 "Homepage" = "https://github.com/devbis/aiopppp"
