@@ -1,13 +1,15 @@
 import asyncio
 import datetime
 import logging
+import struct
 from enum import Enum
 from typing import Callable
 
-from .const import JSON_COMMAND_NAMES, PTZ, JsonCommands, PacketType
+from .const import JSON_COMMAND_NAMES, PTZ, BinaryCommands, JsonCommands, PacketType
 from .encrypt import ENC_METHODS
 from .exceptions import AuthError, CommandResultError
 from .packets import (
+    BinaryCmdPkt,
     JsonCmdPkt,
     make_close_pkt,
     make_drw_ack_pkt,
@@ -15,6 +17,7 @@ from .packets import (
     make_p2palive_pkt,
     make_punch_pkt,
     parse_packet,
+    xq_bytes_decode,
 )
 from .types import Channel, DeviceDescriptor, VideoFrame
 
@@ -79,7 +82,19 @@ class VideoQueueMixin:
         self.process_video_task = asyncio.create_task(self.process_video_queue())
 
     async def handle_incoming_video_packet(self, pkt_epoch, pkt):
-        raise NotImplementedError
+        video_payload = pkt.get_drw_payload()
+        # logger.info(f'- video frame {pkt._cmd_idx}')
+        video_marker = b'\x55\xaa\x15\xa8'  # next \x03 - video marker
+
+        video_chunk_idx = pkt._cmd_idx + 0x10000 * pkt_epoch
+
+        # 0x20 - size of the header starting with this magic
+        if video_payload.startswith(video_marker):
+            self.video_boundaries.add(video_chunk_idx)
+            self.video_received[video_chunk_idx] = video_payload[0x20:]
+        else:
+            self.video_received[video_chunk_idx] = video_payload
+        await self.process_video_frame()
 
     async def process_video_frame(self):
         if len(self.video_boundaries) <= 1:
@@ -385,21 +400,6 @@ class JsonSession(Session):
         elif drw_pkt._channel == Channel.Command:
             await self.handle_incoming_command_packet(drw_pkt)
 
-    async def handle_incoming_video_packet(self, pkt_epoch, pkt):
-        video_payload = pkt.get_drw_payload()
-        # logger.info(f'- video frame {pkt._cmd_idx}')
-        video_marker = b'\x55\xaa\x15\xa8'  # next \x03 - video marker
-
-        video_chunk_idx = pkt._cmd_idx + 0x10000 * pkt_epoch
-
-        # 0x20 - size of the header starting with this magic
-        if video_payload.startswith(video_marker):
-            self.video_boundaries.add(video_chunk_idx)
-            self.video_received[video_chunk_idx] = video_payload[0x20:]
-        else:
-            self.video_received[video_chunk_idx] = video_payload
-        await self.process_video_frame()
-
     async def handle_incoming_command_packet(self, drw_pkt):
         if isinstance(drw_pkt, JsonCmdPkt):
             response = drw_pkt.json_payload
@@ -426,6 +426,21 @@ class JsonSession(Session):
         # logger.debug('Waiting for params ack')
         await self.wait_ack(idx)
 
+        # {
+        #     'tz': -3,
+        #     'time': 3950165700,
+        #     'icut': 0,
+        #     'batValue': 90,
+        #     'batStatus': 1,
+        #     'sysver': 'HQLS_HQT66DP_20240925 11:06:42',
+        #     'mcuver': '1.1.1.1',
+        #     'sensor': 'GC0329',
+        #     'isShow4KMenu': 0,
+        #     'isShowIcutAuto': 1,
+        #     'rotmir': 0,
+        #     'signal': 100,
+        #     'lamp': 1,
+        # }
         cam_properties = await self.wait_cmd_result(JsonCommands.CMD_GET_PARMS)
         if cam_properties['result'] != 0:
             raise CommandResultError(f'Get properties failed: {cam_properties}')
@@ -497,6 +512,209 @@ class JsonSession(Session):
         Reset to factory defaults
         """
         await self.control(reset=1)
+
+
+class BinarySession(Session):
+    DEFAULT_LOGIN = 'admin'
+    DEFAULT_PASSWORD = 'admin'
+    ACKS = {
+        BinaryCommands.ConnectUser: BinaryCommands.ConnectUserAck,
+        BinaryCommands.VideoParamSet: BinaryCommands.VideoParamSetAck,
+        BinaryCommands.StartVideo: BinaryCommands.StartVideoAck,
+        BinaryCommands.StopVideo: BinaryCommands.StartVideoAck,
+    }
+
+    def __init__(self, *args, login='', password='', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.auth_login = login or self.DEFAULT_LOGIN
+        self.auth_password = password or self.DEFAULT_PASSWORD
+        self.ticket = b'\x00' * 4
+
+    async def handle_drw(self, drw_pkt):
+        await super().handle_drw(drw_pkt)
+        self.last_drw_pkt_at = datetime.datetime.now()
+
+        # # 0x10000 - max number of chunks in one epoch,we need to keep order of chunks
+        pkt_epoch = self._get_drw_epoch(drw_pkt)
+
+        if pkt_epoch > self.video_epoch:
+            logger.info('Video epoch changed %s -> %s', self.video_epoch, pkt_epoch)
+            self.video_epoch = pkt_epoch
+            self.last_drw_pkt_idx = drw_pkt._cmd_idx
+        elif self.last_drw_pkt_idx < drw_pkt._cmd_idx:
+            self.last_drw_pkt_idx = drw_pkt._cmd_idx
+
+        if drw_pkt._channel == Channel.Video:
+            # logger.debug(f'Got video data {drw_pkt.get_drw_payload()}')
+            if self.video_stale_at:
+                logger.warning('Got video data while stale')
+                self.video_stale_at = None
+            self.video_chunk_queue.put_nowait((pkt_epoch, drw_pkt))
+        elif drw_pkt._channel == Channel.Audio:
+            pass
+        elif drw_pkt._channel == Channel.Command:
+            await self.handle_incoming_command_packet(drw_pkt)
+
+    def _get_drw_epoch(self, drw_pkt):
+        if self.last_drw_pkt_idx > 0xff00 and drw_pkt._cmd_idx < 0x100:
+            return self.video_epoch + 1
+        if self.video_epoch and self.last_drw_pkt_idx < 0x100 and drw_pkt._cmd_idx > 0xff00:
+            return self.video_epoch - 1
+        return self.video_epoch
+
+    async def handle_incoming_command_packet(self, drw_pkt):
+        cmd_header_len = 12
+        payload = drw_pkt.get_drw_payload()
+        start_type = payload[0:2]
+        if start_type == BinaryCmdPkt.START_CMD:
+            cmd_id = BinaryCommands(int.from_bytes(payload[2:4], 'big'))
+            # payload_len = int.from_bytes(payload[4:6], 'little')
+            # if cmd_header_len < len(payload) < payload_len:
+            #     logger.warning(f'Received a cropped payload: {payload_len} when packet is {len(payload)}')
+            #     payload_len = len(payload) - cmd_header_len
+            data = payload[cmd_header_len:]
+            if len(data) > 4:
+                data = xq_bytes_decode(data, 4)
+
+            if cmd_id == BinaryCommands.ConnectUserAck:
+                self.ticket = payload[8:12]
+
+            if cmd_id in self.ACKS:
+                waiter = self.cmd_waiters.pop(self.ACKS[cmd_id].value, None)
+                if waiter:
+                    waiter.set_result(data)
+
+    async def send_command(self, cmd, cmd_payload, *, with_response=False, **kwargs):
+        pkt_idx = self.outgoing_command_idx
+        self.outgoing_command_idx += 1
+        pkt = BinaryCmdPkt(
+            pkt_idx,
+            cmd,
+            cmd_payload,
+            self.ticket,
+        )
+        if with_response:
+            self.cmd_waiters[cmd.value] = asyncio.Future()
+        await self.send(pkt)
+        return pkt_idx
+
+    async def wait_cmd_result(self, cmd, timeout=5):
+        fut = self.cmd_waiters.get(self.ACKS[cmd].value)
+        if fut:
+            res = await asyncio.wait_for(fut, timeout=timeout)
+            logger.debug('Got command result %s', res)
+            return res
+        return b''
+
+    @staticmethod
+    def _get_video_params(mode):
+        pairs = {
+            # 320 x 240
+            1: [
+                [0x1, 0x0],
+                # [0x7, 0x20],
+            ],
+            # 640x480
+            2: [
+                [0x1, 0x2],
+                # [0x7, 0x50],
+            ],
+            # also 640x480 on the X5 -- hwat now?
+            3: [
+                [0x1, 0x3],
+                # [0x7, 0x78],
+            ],
+            # also 640x480 on the X5 -- hwat now?
+            4: [
+                [0x1, 0x4],
+                # [0x7, 0xa0],
+            ],
+            # maybe the 0x7 = bitrate??
+        }
+        return [struct.pack('<LL', *x) for x in pairs[mode]]
+
+    async def _request_video(self, mode):
+        logger.info('Request video %s', mode)
+
+        if mode == 1:
+            video_params = self._get_video_params(2)
+        elif mode == 2:
+            video_params = self._get_video_params(1)
+        else:
+            video_params = []
+
+        if mode:
+            for video_param in video_params:
+                await self.send_command(BinaryCommands.VideoParamSet, video_param, with_response=True)
+            await self.send_command(BinaryCommands.StartVideo, b'', with_response=True)
+        else:
+            await self.send_command(BinaryCommands.StopVideo, b'', with_response=True)
+
+    async def login(self):
+        # type is char account[0x20]; char password[0x80];
+        l_max = 0x20
+        p_max = 0x80
+
+        login = self.auth_login[:l_max].encode('utf-8')
+        password = self.auth_password[:p_max].encode('utf-8')
+        payload = login + b'\x00' * (l_max - len(login)) + password + b'\x00' * (p_max - len(password))
+        await self.send_command(BinaryCommands.ConnectUser, payload, with_response=True)
+
+    @staticmethod
+    def _parse_dev_status(data):
+        charging = data[0x14] & 1
+        power = int.from_bytes(data[0x04:0x06], 'little')
+        dbm = data[0x10] - 0x100
+        sw_ver = '.'.join(map(str, data[0x0c:0x10]))  # b'\x01\0x02\x03\x04' -> 1.2.3.4
+
+        return {
+            'charging': charging > 0,
+            'battery_mV': power,
+            'dbm': dbm,
+            'mcuver': sw_ver,
+        }
+
+    async def setup_device(self):
+        idx = await self.login()
+        await self.wait_ack(idx)
+        auth_result = await self.wait_cmd_result(BinaryCommands.ConnectUser)
+        if int.from_bytes(auth_result[0:2], 'little') != 0:  # todo: find where result is
+            raise AuthError(f'Login failed: {auth_result}')
+
+        await self.send_command(BinaryCommands.DevStatus, b'', with_response=True)
+        await self.wait_ack(idx)
+        status_result = await self.wait_cmd_result(BinaryCommands.DevStatus)
+        self.dev_properties = self._parse_dev_status({**status_result, 'raw': status_result.hex('')})
+        self.device_is_ready.set()
+
+    async def loop_step(self):
+        await super().loop_step()
+
+    async def reboot(self, **kwargs):
+        await self.send_command(BinaryCommands.Reboot, b'')
+
+    async def reset(self, **kwargs):
+        pass
+
+    async def toggle_whitelight(self, value, **kwargs):
+        pass
+
+    async def toggle_ir(self, value, **kwargs):
+        pass
+
+    async def toggle_lamp(self, value, **kwargs):
+        pass
+
+    async def rotate_start(self, value, **kwargs):
+        pass
+
+    async def rotate_stop(self, **kwargs):
+        pass
+
+    async def step_rotate(self, value, **kwargs):
+        await self.rotate_start(value)
+        # await asyncio.sleep(0.2)
+        await self.rotate_stop()
 
 
 class SharedFrameBuffer:
