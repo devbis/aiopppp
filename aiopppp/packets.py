@@ -5,6 +5,7 @@ import struct
 from .const import CAM_MAGIC, CC_DEST, PacketType
 from .types import Channel, DeviceID
 
+logger = logging.getLogger(__name__)
 
 class Packet:
     def __init__(self, typ, payload):
@@ -172,7 +173,14 @@ def parse_packet(data):
 
     typ, length = struct.unpack('>xBH', data[:4])
     if len(data) != length + 4:
-        raise ValueError('Invalid pkt length')
+        # some cameras are known to send broken p2p alive packets - zero length, but real length is different and
+        # payload consists of zeros
+        if typ == PacketType.P2PAlive.value:
+            data = data[:4]
+        else:
+            logger.warning(
+                'Invalid pkt length: pkt.len=%d, real length=%d, [%s]',
+                length, len(data) - 4, data.hex(' '))
 
     pkt_class, parse_func = PARSERS.get(PacketType(typ), (Packet, None))
     if parse_func is None:
