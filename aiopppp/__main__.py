@@ -34,7 +34,7 @@ async def amain(remote_addr, local_port):
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     parser = argparse.ArgumentParser(
         prog='aiopppp',
         description='A test web server to serve video stream from PPPP-based cameras',
