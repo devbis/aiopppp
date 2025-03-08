@@ -81,6 +81,21 @@ class Device:
             raise NotConnectedError("Device lost during connection")
 
         if self.session.dev_properties:
+            # {
+            #     'tz': -3,
+            #     'time': 3950400351,
+            #     'icut': 0,
+            #     'batValue': 90,
+            #     'batStatus': 1,
+            #     'sysver': 'HQLS_HQT66DP_20240925 11:06:42',
+            #     'mcuver': '1.1.1.1',
+            #     'sensor': 'GC0329',
+            #     'isShow4KMenu': 0,
+            #     'isShowIcutAuto': 1,
+            #     'rotmir': 0,
+            #     'signal': 100,
+            #     'lamp': 1,
+            # }
             self.properties = self.session.dev_properties
 
     def on_device_lost(self):
