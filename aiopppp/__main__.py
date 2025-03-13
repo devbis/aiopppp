@@ -12,6 +12,7 @@ discovery = None
 
 
 def on_device_found(device):
+    logger.warning("Device found: %s %s", device.dev_id, device.encryption)
     session = make_session(device, on_device_lost=on_device_lost)
     SESSIONS[device.dev_id.dev_id] = session
     session.start()
