@@ -91,7 +91,7 @@ class BinaryCmdPkt(DrwPkt):
         self.ticket = ticket
 
     def __str__(self):
-        return f'{self.type.name}({self.drw_str()}): {self.cmd_payload}]'
+        return f'{self.type.name}({self.drw_str()}): {self.command}, (ticket: {self.ticket.hex()}) [{self.cmd_payload}]'
 
     def get_drw_payload(self):
         data = struct.pack(
