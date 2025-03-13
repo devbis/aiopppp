@@ -277,11 +277,14 @@ class Session(PacketQueueMixin, VideoQueueMixin):
     async def setup_device(self):
         pass
 
+    async def send_initial_packets(self):
+        raise NotImplementedError
+
     async def _run(self):
         self.transport = await self.create_udp()
 
         # send punch packet
-        await self.send(make_punch_pkt(self.dev.dev_id))
+        await self.send_initial_packets()
 
         try:
             await asyncio.wait_for(self._p2p_rdy_debouncer.wait(), timeout=10)
@@ -354,6 +357,9 @@ class JsonSession(Session):
         super().__init__(*args, **kwargs)
         self.auth_login = login or self.DEFAULT_LOGIN
         self.auth_password = password or self.DEFAULT_PASSWORD
+
+    async def send_initial_packets(self):
+        await self.send(make_punch_pkt(self.dev.dev_id))
 
     def get_common_data(self):
         return {
@@ -546,6 +552,12 @@ class BinarySession(Session):
         self.auth_login = login or self.DEFAULT_LOGIN
         self.auth_password = password or self.DEFAULT_PASSWORD
         self.ticket = b'\x00' * 4
+
+    async def send_initial_packets(self):
+        pkt = make_punch_pkt(self.dev.dev_id)
+        await self.send(pkt)
+        pkt.type = PacketType.P2pRdy
+        await self.send(pkt)
 
     async def handle_drw(self, drw_pkt):
         await super().handle_drw(drw_pkt)
