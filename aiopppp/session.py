@@ -18,7 +18,6 @@ from .packets import (
     make_punch_pkt,
     parse_packet,
     xq_bytes_decode,
-    PunchPkt,
 )
 from .types import Channel, DeviceDescriptor, VideoFrame
 
@@ -541,16 +540,9 @@ class BinarySession(Session):
         self.ticket = b'\x00' * 4
 
     async def send_initial_packets(self):
-        dev_id = self.dev.dev_id
-        pkt = PunchPkt(
-            PacketType.P2pRdy,
-            struct.pack(
-                ">4sQ8s",
-                dev_id.prefix.encode("ascii"),
-                int(dev_id.serial),
-                dev_id.suffix.encode("ascii"),
-            ),
-        )
+        pkt = make_punch_pkt(self.dev.dev_id)
+        await self.send(pkt)
+        pkt.type = PacketType.P2pRdy
         await self.send(pkt)
 
     async def handle_drw(self, drw_pkt):
