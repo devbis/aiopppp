@@ -19,6 +19,7 @@ def get_new_device_fut():
     return new_device_fut
 
 def on_device_found(device, login, password):
+    logger.warning("Device found: %s %s", device.dev_id, device.encryption)
     session = make_session(device, on_device_lost=on_device_lost, login=login, password=password)
     SESSIONS[device.dev_id.dev_id] = session
     session.start()

@@ -17,31 +17,56 @@ XOR1_KEY_TABLE = [
     0x68, 0x35, 0xc3, 0x52, 0x9d, 0x46, 0x44, 0x1e, 0x17,
 ]
 
-XOR1_ENC_KEY = (0x69, 0x97, 0xcc, 0x19)
+VI365_KEY = (0x69, 0x97, 0xcc, 0x19)
+LITTLE_STARS_KEY = (0xb8, 0x48, 0x90, 0x00)
+XOR3_ENC_KEY = (0xdd, 0xf1, 0x01, 0x81)
+
+# XOR4_ENC_KEY = (0xb9, 0x14, 0xba, 0xa8)
+# XOR5_ENC_KEY = (0x56, 0x50, 0x29, 0xd5)
 
 
-def xor1_decode(data):
+def generic_decode(data, key):
     prev_byte = 0
     buf = bytearray([0] * len(data))
     for i in range(len(data)):
-        index = (XOR1_ENC_KEY[prev_byte & 0x03] + prev_byte) & 0xff
+        index = (key[prev_byte & 0x03] + prev_byte) & 0xff
         orig_byte = data[i]
         buf[i] = orig_byte ^ XOR1_KEY_TABLE[index]
         prev_byte = orig_byte
     return bytes(buf)
 
 
-def xor1_encode(data):
+def generic_encode(data, key):
     prev_byte = 0
     buf = bytearray([0] * len(data))
     for i in range(len(data)):
-        index = (XOR1_ENC_KEY[prev_byte & 0x03] + prev_byte) & 0xff
+        index = (key[prev_byte & 0x03] + prev_byte) & 0xff
         buf[i] = data[i] ^ XOR1_KEY_TABLE[index]
         prev_byte = buf[i]
     return bytes(buf)
 
+def vi365_decode(data):
+    return generic_decode(data, VI365_KEY)
+
+def vi365_encode(data):
+    return generic_encode(data, VI365_KEY)
+
+def little_stars_decode(data):
+    return generic_decode(data, LITTLE_STARS_KEY)
+
+def little_stars_encode(data):
+    return generic_encode(data, LITTLE_STARS_KEY)
+
+def xor3_decode(data):
+    return generic_decode(data, XOR3_ENC_KEY)
+
+def xor3_encode(data):
+    return generic_encode(data, XOR3_ENC_KEY)
+
 
 ENC_METHODS = {
     Encryption.NONE: (lambda x: x, lambda x: x),
-    Encryption.XOR1: (xor1_decode, xor1_encode),
+    Encryption.VI365: (vi365_decode, vi365_encode),
+    Encryption.LITTLE_STARS: (little_stars_decode, little_stars_encode),
+    Encryption.XOR3: (xor3_decode, xor3_encode),
 }
