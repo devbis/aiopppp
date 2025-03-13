@@ -99,7 +99,7 @@ class BinaryCmdPkt(DrwPkt):
             self.START_CMD,
             self.command.value,
             len(self.cmd_payload).to_bytes(4, 'little'),
-            CC_DEST[self.command],
+            CC_DEST.get(self.command, 0x0),
             self.ticket,
         )
         if self.cmd_payload and len(self.cmd_payload) > 4:
