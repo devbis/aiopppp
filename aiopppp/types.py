@@ -3,7 +3,9 @@ from enum import Enum
 
 class Encryption(Enum):
     NONE = 0
-    XOR1 = 1
+    VI365 = 1
+    LITTLE_STARS = 2
+    XOR3 = 3
 
 
 class Channel(Enum):
