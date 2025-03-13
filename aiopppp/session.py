@@ -24,6 +24,9 @@ from .types import Channel, DeviceDescriptor, VideoFrame
 logger = logging.getLogger(__name__)
 
 
+P2P_RDY_MIN_COUNT = 3
+
+
 class State(Enum):
     DISCONNECTED = 0
     CONNECTED = 1
@@ -186,7 +189,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             pass
         if pkt.type == PacketType.P2pRdy:
             self.ready_counter += 1
-            if self.ready_counter == 5:
+            if self.ready_counter == P2P_RDY_MIN_COUNT:
                 self._ready_for_commands.set()
         elif pkt.type == PacketType.P2PAlive:
             await self.send(make_p2palive_ack_pkt())
@@ -274,7 +277,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         await self.send(make_punch_pkt(self.dev.dev_id))
 
         try:
-            await self._ready_for_commands.wait()
+            await asyncio.wait_for(self._ready_for_commands.wait(), timeout=10)
             logger.info('Connected to %s, json=%s', self.dev.dev_id, self.dev.is_json)
             self.state = State.CONNECTED
             try:
