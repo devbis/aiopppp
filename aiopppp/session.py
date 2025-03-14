@@ -21,7 +21,7 @@ from .types import Channel, DeviceDescriptor, VideoFrame
 logger = logging.getLogger(__name__)
 
 
-P2P_RDY_MIN_COUNT = 3
+P2P_RDY_MIN_COUNT = 20
 
 
 class State(Enum):
