@@ -442,11 +442,11 @@ class JsonSession(Session):
         return {'result': -1}
 
     async def setup_device(self):
-        idx = await self.login()
-        await self.wait_ack(idx)
-        auth_result = await self.wait_cmd_result(JsonCommands.CMD_CHECK_USER)
-        if auth_result['result'] != 0:
-            raise AuthError(f'Login failed: {auth_result}')
+        # idx = await self.login()
+        # await self.wait_ack(idx)
+        # auth_result = await self.wait_cmd_result(JsonCommands.CMD_CHECK_USER)
+        # if auth_result['result'] != 0:
+        #     raise AuthError(f'Login failed: {auth_result}')
         idx = await self.send_command(JsonCommands.CMD_GET_PARMS, with_response=True)
         # logger.debug('Waiting for params ack')
         await self.wait_ack(idx)
