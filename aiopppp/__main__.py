@@ -34,7 +34,6 @@ async def amain(remote_addr, local_port):
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         prog='aiopppp',
         description='A test web server to serve video stream from PPPP-based cameras',
@@ -53,7 +52,14 @@ def main():
         default=0,
         help='Local discovery port for receiving incoming discovery packets, default is random',
     )
+    parser.add_argument(
+        '--log-level',
+        type=str,
+        default='INFO',
+    )
+
     args = parser.parse_args()
+    logging.basicConfig(level=logging.getLevelName(args.log_level.upper()))
     asyncio.run(amain(remote_addr=args.addr, local_port=args.local_discovery_port))
 
 
