@@ -127,7 +127,7 @@ async def start_web_server(port=4000):
 
     runner = web.AppRunner(app, handle_signals=True)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port, reuse_port=True)
+    site = web.TCPSite(runner, '0.0.0.0', port)
     try:
         logger.info(f'Starting web server on port {port}')
         await site.start()
