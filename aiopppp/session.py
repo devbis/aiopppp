@@ -595,8 +595,10 @@ class BinarySession(Session):
         cmd_header_len = 12
         payload = drw_pkt.get_drw_payload()
         start_type = payload[0:2]
+        logger.info('incoming DRW Command packet, start_type=%s, full_drw_payload=[%s]', start_type, payload.hex(' '))
         if start_type == BinaryCmdPkt.START_CMD:
             cmd_id = BinaryCommands(int.from_bytes(payload[2:4], 'big'))
+            logger.info('. cmd_id=%s', cmd_id)
             # payload_len = int.from_bytes(payload[4:6], 'little')
             # if cmd_header_len < len(payload) < payload_len:
             #     logger.warning(f'Received a cropped payload: {payload_len} when packet is {len(payload)}')
@@ -607,6 +609,7 @@ class BinarySession(Session):
 
             if cmd_id == BinaryCommands.ConnectUserAck:
                 self.ticket = payload[8:12]
+            logger.info('. ticket=%s', self.ticket)
 
             if cmd_id in self.ACKS:
                 waiter = self.cmd_waiters.pop(self.ACKS[cmd_id].value, None)
