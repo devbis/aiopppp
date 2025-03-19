@@ -17,6 +17,7 @@ from .packets import (
     parse_packet,
 )
 from .types import Channel, DeviceDescriptor, VideoFrame
+from .utils import DebounceEvent
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +126,6 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.dev_properties = {}
         self.outgoing_command_idx = 0
         self.transport = None
-        self.ready_counter = 0
-        self._ready_for_commands = asyncio.Event()
         self.device_is_ready = asyncio.Event()
         self.is_video_requested = False
         self.video_stale_at = None
@@ -136,6 +135,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         self.main_task = None
         self.drw_waiters = {}
         self.cmd_waiters = {}
+        self._p2p_rdy_debouncer = DebounceEvent(delay=0.2)
 
     def __str__(self):
         return f'Session({self.dev.dev_id}) ({self.state.name})'
@@ -170,9 +170,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         if pkt.type == PacketType.PunchPkt:
             pass
         if pkt.type == PacketType.P2pRdy:
-            self.ready_counter += 1
-            if self.ready_counter == 5:
-                self._ready_for_commands.set()
+            await self._p2p_rdy_debouncer.tick()
         elif pkt.type == PacketType.P2PAlive:
             await self.send(make_p2palive_ack_pkt())
         elif pkt.type == PacketType.Drw:
@@ -259,7 +257,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         await self.send(make_punch_pkt(self.dev.dev_id))
 
         try:
-            await self._ready_for_commands.wait()
+            await asyncio.wait_for(self._p2p_rdy_debouncer.wait(), timeout=10)
             logger.info('Connected to %s, json=%s', self.dev.dev_id, self.dev.is_json)
             self.state = State.CONNECTED
             try:
@@ -302,7 +300,6 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             raise RuntimeError('Session is not started')
         logger.info('Stopping task for %s', self.dev.dev_id)
         self.device_is_ready.set()
-        self.ready_counter = 0
         self.process_packet_task.cancel()
         self.process_video_task.cancel()
         self.main_task.cancel()
