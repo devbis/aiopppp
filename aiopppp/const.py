@@ -60,7 +60,7 @@ CC_DEST = {
     BinaryCommands.WifiSettings: 0x0000,
 
     BinaryCommands.ListWifiAck: 0xaa55,
-    BinaryCommands.ConnectUserAck: 0xaa55,
+    BinaryCommands.ConnectUserAck: 0xff00,  # 0xaa55,
     BinaryCommands.DevStatusAck: 0xaa55,
 }
 

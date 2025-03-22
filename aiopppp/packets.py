@@ -84,25 +84,27 @@ def xq_bytes_decode(data, shift):
 class BinaryCmdPkt(DrwPkt):
     START_CMD = b'\x11\x0a'
 
-    def __init__(self, cmd_idx, command, cmd_payload, ticket):
+    def __init__(self, cmd_idx, command, cmd_payload, ticket, token=b''):
         super().__init__(0, cmd_idx, None)
         self.command = command
         self.cmd_payload = cmd_payload
         self.ticket = ticket
+        self.token = token
 
     def __str__(self):
         return f'{self.type.name}({self.drw_str()}): {self.command}, (ticket: {self.ticket.hex()}) [{self.cmd_payload}]'
 
     def get_drw_payload(self):
         data = struct.pack(
-            '>2sH2sH4s',
+            '>2sH2sH',
             self.START_CMD,
             self.command.value,
-            len(self.cmd_payload).to_bytes(4, 'little'),
+            (len(self.cmd_payload) + len(self.ticket)  + len(self.token)).to_bytes(2, 'little'),
             CC_DEST.get(self.command, 0x0),
-            self.ticket,
         )
-        if self.cmd_payload and len(self.cmd_payload) > 4:
+        data += self.token
+        data += self.ticket
+        if self.cmd_payload:
             data += xq_bytes_encode(self.cmd_payload, 4)
         return data
 
@@ -154,10 +156,6 @@ def make_p2palive_ack_pkt():
 
 def make_close_pkt():
     return Packet(PacketType.Close, b'')
-
-
-def create_drw(session, user, data):
-    pass
 
 
 PARSERS = {

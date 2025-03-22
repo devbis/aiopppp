@@ -246,6 +246,8 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             del self.drw_waiters[cmd_idx_ack]
 
     async def wait_ack(self, idx, timeout=5):
+        if idx is None:
+            raise ValueError('Need to provide numeric command index')
         fut = self.drw_waiters.get(idx)
         if fut:
             logger.debug(f'Waiting for ACK for {idx}')
@@ -525,7 +527,9 @@ class BinarySession(Session):
         BinaryCommands.VideoParamSet: BinaryCommands.VideoParamSetAck,
         BinaryCommands.StartVideo: BinaryCommands.StartVideoAck,
         BinaryCommands.StopVideo: BinaryCommands.StartVideoAck,
+        BinaryCommands.DevStatus: BinaryCommands.DevStatusAck,
     }
+    REV_ACKS = {v: k for k, v in ACKS.items()}
 
     def __init__(self, *args, login='', password='', **kwargs):
         super().__init__(*args, **kwargs)
@@ -583,16 +587,20 @@ class BinarySession(Session):
             # if cmd_header_len < len(payload) < payload_len:
             #     logger.warning(f'Received a cropped payload: {payload_len} when packet is {len(payload)}')
             #     payload_len = len(payload) - cmd_header_len
-            data = payload[cmd_header_len:]
-            if len(data) > 4:
+
+            # todo: does ticket come all the time?
+            ticket = payload[cmd_header_len : cmd_header_len + 4]
+            data = payload[cmd_header_len + 4:]
+            if len(data) >= 4:
                 data = xq_bytes_decode(data, 4)
 
             if cmd_id == BinaryCommands.ConnectUserAck:
-                self.ticket = payload[8:12]
-            logger.info('. ticket=%s', self.ticket)
+                self.ticket = ticket
+            logger.info('. ticket=%s, %s data=%s', self.ticket, cmd_id, data.hex(' '))
 
-            if cmd_id in self.ACKS:
-                waiter = self.cmd_waiters.pop(self.ACKS[cmd_id].value, None)
+            if cmd_id in self.REV_ACKS:
+                waiter = self.cmd_waiters.pop(self.REV_ACKS[cmd_id].value, None)
+                logger.info(f'{cmd_id=} {self.REV_ACKS[cmd_id]=} {waiter=} {data=} {payload=}')
                 if waiter:
                     waiter.set_result(data)
 
@@ -611,7 +619,7 @@ class BinarySession(Session):
         return pkt_idx
 
     async def wait_cmd_result(self, cmd, timeout=5):
-        fut = self.cmd_waiters.get(self.ACKS[cmd].value)
+        fut = self.cmd_waiters.get(cmd.value)
         if fut:
             res = await asyncio.wait_for(fut, timeout=timeout)
             logger.debug('Got command result %s', res)
@@ -670,10 +678,11 @@ class BinarySession(Session):
         login = self.auth_login[:l_max].encode('utf-8')
         password = self.auth_password[:p_max].encode('utf-8')
         payload = login + b'\x00' * (l_max - len(login)) + password + b'\x00' * (p_max - len(password))
-        await self.send_command(BinaryCommands.ConnectUser, payload, with_response=True)
+        return await self.send_command(BinaryCommands.ConnectUser, payload, with_response=True)
 
     @staticmethod
     def _parse_dev_status(data):
+        logger.info('Parse dev status [%s]', data.hex(' '))
         charging = data[0x14] & 1
         power = int.from_bytes(data[0x04:0x06], 'little')
         dbm = data[0x10] - 0x100
@@ -690,13 +699,16 @@ class BinarySession(Session):
         idx = await self.login()
         await self.wait_ack(idx)
         auth_result = await self.wait_cmd_result(BinaryCommands.ConnectUser)
-        if int.from_bytes(auth_result[0:2], 'little') != 0:  # todo: find where result is
-            raise AuthError(f'Login failed: {auth_result}')
+        logger.warning(f"Connect user responded with {auth_result=}")
+        if int.from_bytes(auth_result[:1], 'little', signed=True) != 0:  # todo: find where result is
+            logger.warning('Connect user failed ????')
+            # raise AuthError(f'Login failed: {auth_result}')
 
         await self.send_command(BinaryCommands.DevStatus, b'', with_response=True)
         await self.wait_ack(idx)
         status_result = await self.wait_cmd_result(BinaryCommands.DevStatus)
-        self.dev_properties = self._parse_dev_status({**status_result, 'raw': status_result.hex('')})
+        self.dev_properties = {**self._parse_dev_status(status_result), 'raw': status_result.hex(' ')}
+        logger.info('Camera properties: %s', self.dev_properties)
         self.device_is_ready.set()
 
     async def loop_step(self):
