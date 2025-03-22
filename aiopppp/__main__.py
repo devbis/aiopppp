@@ -10,23 +10,52 @@ logger = logging.getLogger(__name__)
 
 discovery = None
 
+tasks = {}
+
+new_device_fut = asyncio.Future()
+
+
+def get_new_device_fut():
+    return new_device_fut
 
 def on_device_found(device):
     session = make_session(device, on_device_lost=on_device_lost)
     SESSIONS[device.dev_id.dev_id] = session
-    session.start()
+    tasks[device.dev_id.dev_id] = session.start()
+    get_new_device_fut().set_result(None)
 
 
 def on_device_lost(device):
     logger.warning('Device %s lost', device.dev_id)
     SESSIONS.pop(device.dev_id.dev_id, None)
+    tasks.pop(device.dev_id.dev_id, None)
+    get_new_device_fut().set_result(None)
 
 
 async def amain(remote_addr, local_port):
     global discovery
+    global new_device_fut
     discovery = Discovery(remote_addr=remote_addr)
+
+    discovery_task = asyncio.create_task(discovery.discover(on_device_found))
+    webserver_task = asyncio.create_task(start_web_server())
     try:
-        await asyncio.gather(discovery.discover(on_device_found), start_web_server())
+        while True:
+            new_device_fut = asyncio.Future()
+            dev_tasks = set(tasks.values())
+            done, pending = await asyncio.wait(
+                [
+                    discovery_task,
+                    webserver_task,
+                    new_device_fut,
+                    *dev_tasks,
+                ],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if new_device_fut in pending:
+                break
+        if done:
+            await asyncio.gather(*done)
     finally:
         for dev_id, session in list(SESSIONS.items()):
             session.stop()
