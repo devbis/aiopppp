@@ -12,7 +12,7 @@ discovery = None
 
 tasks = {}
 
-new_device_fut = asyncio.Future()
+new_device_fut = None
 
 
 def get_new_device_fut():
@@ -21,7 +21,8 @@ def get_new_device_fut():
 def on_device_found(device, login, password):
     session = make_session(device, on_device_lost=on_device_lost, login=login, password=password)
     SESSIONS[device.dev_id.dev_id] = session
-    tasks[device.dev_id.dev_id] = session.start()
+    session.start()
+    tasks[device.dev_id.dev_id] = session.running_tasks()
     get_new_device_fut().set_result(None)
 
 
@@ -42,7 +43,7 @@ async def amain(remote_addr, local_port, username, password):
     try:
         while True:
             new_device_fut = asyncio.Future()
-            dev_tasks = set(tasks.values())
+            dev_tasks = set(t for task_list in tasks.values() for t in task_list)
             done, pending = await asyncio.wait(
                 [
                     discovery_task,
