@@ -684,14 +684,29 @@ class BinarySession(Session):
 
     @staticmethod
     def _parse_dev_status(data):
-        logger.info('Parse dev status [%s]', data.hex(' '))
+        """
+        Example data (len=124):
+
+        "0d 02 01 3d 74 0f 00 00 00 00 00 00 ff ff ff ff bf ff ff ff "
+        "01 01 00 30 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 00 00 00 00 01 00 00 02 00 00 00 00 00 00 00 "
+        "00 00 00 00 00 ff ff ff 00 00 00 00 ff ff ff ff 00 00 00 00 "
+        "00 00 00 00"
+
+        Values are unknown so data below is something that looks similar according to the value ranges.
+
+        """
+
+        logger.debug('Parse dev status [%s]', data.hex(' '))
         charging = power = dbm = sw_ver = None
-        if len(data) >= 0x14:
-            charging = data[0x14] & 1 > 0
         if len(data) >= 0x10:
-            power = int.from_bytes(data[0x04:0x06], 'little')
+            charging = data[0x10] & 1 > 0  # maybe 0x14? then, where is the version?
+        if len(data) >= 0x18:
+            power = int.from_bytes(data[0x4:0x6], 'little')
             dbm = data[0x10] - 0x100
-            sw_ver = '.'.join(map(str, data[0x0c:0x10]))  # b'\x01\0x02\x03\x04' -> 1.2.3.4
+            sw_ver = '.'.join(map(str, data[0x14:0x18]))  # b'\x01\0x02\x03\x04' -> 1.2.3.4
 
         return {
             'charging': charging,
@@ -704,10 +719,10 @@ class BinarySession(Session):
         idx = await self.login()
         await self.wait_ack(idx)
         auth_result = await self.wait_cmd_result(BinaryCommands.ConnectUser)
-        logger.warning(f"Connect user responded with {auth_result=}")
-        if int.from_bytes(auth_result[:1], 'little', signed=True) != 0:  # todo: find where result is
-            logger.warning('Connect user failed ????')
-            # raise AuthError(f'Login failed: {auth_result}')
+        logger.debug(f"Connect user responded with {auth_result=}")
+        if auth_result != b'':
+            # logger.warning('Connect user failed ????')
+            raise AuthError(f'Login failed: [{auth_result.hex(" ")}]')
 
         await self.send_command(BinaryCommands.DevStatus, b'', with_response=True)
         await self.wait_ack(idx)
