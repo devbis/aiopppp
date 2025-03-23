@@ -672,12 +672,7 @@ class BinarySession(Session):
 
     async def login(self):
         # type is char account[0x20]; char password[0x80];
-        l_max = 0x20
-        p_max = 0x80
-
-        login = self.auth_login[:l_max].encode('utf-8')
-        password = self.auth_password[:p_max].encode('utf-8')
-        payload = login + b'\x00' * (l_max - len(login)) + password + b'\x00' * (p_max - len(password))
+        payload = struct.pack('>32s128s', self.auth_login.encode('utf-8'), self.auth_password.encode('utf-8'))
         return await self.send_command(BinaryCommands.ConnectUser, payload, with_response=True)
 
     @staticmethod
