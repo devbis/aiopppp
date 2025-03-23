@@ -18,8 +18,8 @@ new_device_fut = asyncio.Future()
 def get_new_device_fut():
     return new_device_fut
 
-def on_device_found(device):
-    session = make_session(device, on_device_lost=on_device_lost)
+def on_device_found(device, login, password):
+    session = make_session(device, on_device_lost=on_device_lost, login=login, password=password)
     SESSIONS[device.dev_id.dev_id] = session
     tasks[device.dev_id.dev_id] = session.start()
     get_new_device_fut().set_result(None)
@@ -32,12 +32,12 @@ def on_device_lost(device):
     get_new_device_fut().set_result(None)
 
 
-async def amain(remote_addr, local_port):
+async def amain(remote_addr, local_port, username, password):
     global discovery
     global new_device_fut
     discovery = Discovery(remote_addr=remote_addr)
 
-    discovery_task = asyncio.create_task(discovery.discover(on_device_found))
+    discovery_task = asyncio.create_task(discovery.discover(lambda d: on_device_found(d, username, password)))
     webserver_task = asyncio.create_task(start_web_server())
     try:
         while True:
@@ -82,8 +82,28 @@ def main():
         default=0,
         help='Local discovery port for receiving incoming discovery packets, default is random',
     )
+    parser.add_argument(
+        '-u',
+        '--username',
+        type=str,
+        default='',
+        help='Auth login',
+    )
+    parser.add_argument(
+        '-p',
+        '--password',
+        type=str,
+        default='',
+        help='Auth password',
+    )
+
     args = parser.parse_args()
-    asyncio.run(amain(remote_addr=args.addr, local_port=args.local_discovery_port))
+    asyncio.run(amain(
+        remote_addr=args.addr,
+        local_port=args.local_discovery_port,
+        username=args.username,
+        password=args.password,
+    ))
 
 
 if __name__ == '__main__':
