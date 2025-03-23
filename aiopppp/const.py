@@ -29,39 +29,39 @@ class PacketType(Enum):
 
 
 class BinaryCommands(Enum):
-    ConnectUser = 0x2010
-    ConnectUserAck = 0x2011
-    CloseSession = 0x3110
-    CloseSessionAck = 0x3111
-    DevStatus = 0x0810  # CMD_SYSTEM_STATUS_GET
-    DevStatusAck = 0x0811
-    WifiSettingsSet = 0x0160  # CMD_NET_WIFISETTING_SET
-    WifiSettings = 0x0260  # CMD_NET_WIFISETTING_GET
-    WifiSettingsAck = 0x0261
-    ListWifi = 0x0360  # CMD_NET_WIFI_SCAN
-    ListWifiAck = 0x0361
-    StartVideo = 0x1030  # CMD_PEER_LIVEVIDEO_START
-    StartVideoAck = 0x1031
-    StopVideo = 0x1130  # CMD_PEER_LIVEVIDEO_STOP
+    ConnectUser = 0x1020
+    ConnectUserAck = 0x1120
+    CloseSession = 0x1031
+    CloseSessionAck = 0x1131
+    DevStatus = 0x1008  # CMD_SYSTEM_STATUS_GET
+    DevStatusAck = 0x1108
+    WifiSettingsSet = 0x6001  # CMD_NET_WIFISETTING_SET
+    WifiSettings = 0x6002  # CMD_NET_WIFISETTING_GET
+    WifiSettingsAck = 0x6102
+    ListWifi = 0x6003  # CMD_NET_WIFI_SCAN
+    ListWifiAck = 0x6103
+    StartVideo = 0x3010  # CMD_PEER_LIVEVIDEO_START
+    StartVideoAck = 0x3110
+    StopVideo = 0x3011  # CMD_PEER_LIVEVIDEO_STOP
     Shutdown = 0x1010  # CMD_SYSTEM_SHUTDOWN
-    Reboot = 0x1110  # CMD_SYSTEM_REBOOT
-    VideoParamSet = 0x1830  # CMD_PEER_VIDEOPARAM_SET
-    VideoParamSetAck = 0x1831
-    VideoParamGet = 0x1930  # CMD_PEER_VIDEOPARAM_GET
-    IRToggle = 0x0a30  # CMD_PEER_IRCUT_ONOFF
+    Reboot = 0x1011  # CMD_SYSTEM_REBOOT
+    VideoParamSet = 0x3018  # CMD_PEER_VIDEOPARAM_SET
+    VideoParamSetAck = 0x3118
+    VideoParamGet = 0x3019  # CMD_PEER_VIDEOPARAM_GET
+    IRToggle = 0x300a  # CMD_PEER_IRCUT_ONOFF
 
 
 CC_DEST = {
-    BinaryCommands.ConnectUser: 0xff00,
+    BinaryCommands.ConnectUser: 0x00ff,
     BinaryCommands.DevStatus: 0x0000,
     BinaryCommands.StartVideo: 0x0000,
     BinaryCommands.StopVideo: 0x0000,  # ????
     BinaryCommands.ListWifi: 0x0000,
     BinaryCommands.WifiSettings: 0x0000,
 
-    BinaryCommands.ListWifiAck: 0xaa55,
-    BinaryCommands.ConnectUserAck: 0xff00,  # 0xaa55,
-    BinaryCommands.DevStatusAck: 0xaa55,
+    BinaryCommands.ListWifiAck: 0x55aa,
+    BinaryCommands.ConnectUserAck: 0x00ff,  # 0x55aa,
+    BinaryCommands.DevStatusAck: 0x55aa,
 }
 
 

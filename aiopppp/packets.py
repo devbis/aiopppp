@@ -96,10 +96,10 @@ class BinaryCmdPkt(DrwPkt):
 
     def get_drw_payload(self):
         data = struct.pack(
-            '>2sH2sH',
+            '<2s3H',
             self.START_CMD,
             self.command.value,
-            (len(self.cmd_payload) + len(self.ticket)  + len(self.token)).to_bytes(2, 'little'),
+            len(self.cmd_payload) + len(self.ticket) + len(self.token),
             CC_DEST.get(self.command, 0x0),
         )
         data += self.token

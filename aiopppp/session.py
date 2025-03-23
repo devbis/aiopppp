@@ -601,7 +601,7 @@ class BinarySession(Session):
         start_type = payload[0:2]
         logger.info('incoming DRW Command packet, start_type=%s, full_drw_payload=[%s]', start_type, payload.hex(' '))
         if start_type == BinaryCmdPkt.START_CMD:
-            cmd_id = BinaryCommands(int.from_bytes(payload[2:4], 'big'))
+            cmd_id = BinaryCommands(int.from_bytes(payload[2:4], 'little'))
             logger.info('. cmd_id=%s', cmd_id)
             # payload_len = int.from_bytes(payload[4:6], 'little')
             # if cmd_header_len < len(payload) < payload_len:
