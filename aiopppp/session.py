@@ -683,13 +683,16 @@ class BinarySession(Session):
     @staticmethod
     def _parse_dev_status(data):
         logger.info('Parse dev status [%s]', data.hex(' '))
-        charging = data[0x14] & 1
-        power = int.from_bytes(data[0x04:0x06], 'little')
-        dbm = data[0x10] - 0x100
-        sw_ver = '.'.join(map(str, data[0x0c:0x10]))  # b'\x01\0x02\x03\x04' -> 1.2.3.4
+        charging = power = dbm = sw_ver = None
+        if len(data) >= 0x14:
+            charging = data[0x14] & 1 > 0
+        if len(data) >= 0x10:
+            power = int.from_bytes(data[0x04:0x06], 'little')
+            dbm = data[0x10] - 0x100
+            sw_ver = '.'.join(map(str, data[0x0c:0x10]))  # b'\x01\0x02\x03\x04' -> 1.2.3.4
 
         return {
-            'charging': charging > 0,
+            'charging': charging,
             'battery_mV': power,
             'dbm': dbm,
             'mcuver': sw_ver,
