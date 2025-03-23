@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 discovery = None
 
 
-def on_device_found(device):
-    session = make_session(device, on_device_lost=on_device_lost)
+def on_device_found(device, login, password):
+    session = make_session(device, on_device_lost=on_device_lost, login=login, password=password)
     SESSIONS[device.dev_id.dev_id] = session
     session.start()
 
@@ -22,11 +22,11 @@ def on_device_lost(device):
     SESSIONS.pop(device.dev_id.dev_id, None)
 
 
-async def amain(remote_addr, local_port):
+async def amain(remote_addr, local_port, username, password):
     global discovery
     discovery = Discovery(remote_addr=remote_addr)
     try:
-        await asyncio.gather(discovery.discover(on_device_found), start_web_server())
+        await asyncio.gather(discovery.discover(lambda d: on_device_found(d, username, password)), start_web_server())
     finally:
         for dev_id, session in list(SESSIONS.items()):
             session.stop()
@@ -57,10 +57,29 @@ def main():
         type=str,
         default='INFO',
     )
+    parser.add_argument(
+        '-u',
+        '--username',
+        type=str,
+        default='',
+        help='Auth login',
+    )
+    parser.add_argument(
+        '-p',
+        '--password',
+        type=str,
+        default='',
+        help='Auth password',
+    )
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.getLevelName(args.log_level.upper()))
-    asyncio.run(amain(remote_addr=args.addr, local_port=args.local_discovery_port))
+    asyncio.run(amain(
+        remote_addr=args.addr,
+        local_port=args.local_discovery_port,
+        username=args.username,
+        password=args.password,
+    ))
 
 
 if __name__ == '__main__':
