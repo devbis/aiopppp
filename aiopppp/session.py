@@ -17,7 +17,6 @@ from .packets import (
     make_p2palive_pkt,
     make_punch_pkt,
     parse_packet,
-    xq_bytes_decode,
 )
 from .types import Channel, DeviceDescriptor, VideoFrame
 from .utils import DebounceEvent
@@ -596,33 +595,21 @@ class BinarySession(Session):
         return self.video_epoch
 
     async def handle_incoming_command_packet(self, drw_pkt):
-        cmd_header_len = 12
-        payload = drw_pkt.get_drw_payload()
-        start_type = payload[0:2]
-        logger.info('incoming DRW Command packet, start_type=%s, full_drw_payload=[%s]', start_type, payload.hex(' '))
-        if start_type == BinaryCmdPkt.START_CMD:
-            cmd_id = BinaryCommands(int.from_bytes(payload[2:4], 'little'))
-            logger.info('. cmd_id=%s', cmd_id)
-            # payload_len = int.from_bytes(payload[4:6], 'little')
-            # if cmd_header_len < len(payload) < payload_len:
-            #     logger.warning(f'Received a cropped payload: {payload_len} when packet is {len(payload)}')
-            #     payload_len = len(payload) - cmd_header_len
+        if isinstance(drw_pkt, BinaryCmdPkt):
+            if drw_pkt.command == BinaryCommands.ConnectUserAck:
+                self.ticket = drw_pkt.token
+            logger.debug(
+                'handle_incoming_command_packet: ticket=%s, %s data=%s',
+                self.ticket,
+                drw_pkt.command,
+                drw_pkt.cmd_payload.hex(' '),
+            )
 
-            # todo: does ticket come all the time?
-            ticket = payload[cmd_header_len : cmd_header_len + 4]
-            data = payload[cmd_header_len + 4:]
-            if len(data) >= 4:
-                data = xq_bytes_decode(data, 4)
-
-            if cmd_id == BinaryCommands.ConnectUserAck:
-                self.ticket = ticket
-            logger.info('. ticket=%s, %s data=%s', self.ticket, cmd_id, data.hex(' '))
-
-            if cmd_id in self.REV_ACKS:
-                waiter = self.cmd_waiters.pop(self.REV_ACKS[cmd_id].value, None)
-                logger.info(f'{cmd_id=} {self.REV_ACKS[cmd_id]=} {waiter=} {data=} {payload=}')
+            if drw_pkt.command in self.REV_ACKS:
+                waiter = self.cmd_waiters.pop(self.REV_ACKS[drw_pkt.command].value, None)
+                # logger.info(f'{drw_pkt.command=} {self.REV_ACKS[drw_pkt.command]=} {waiter=} {drw_pkt.cmd_payload=}')
                 if waiter:
-                    waiter.set_result(data)
+                    waiter.set_result(drw_pkt.cmd_payload)
 
     async def send_command(self, cmd, cmd_payload, *, with_response=False, **kwargs):
         pkt_idx = self.outgoing_command_idx

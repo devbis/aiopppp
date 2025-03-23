@@ -2,7 +2,7 @@ import json
 import logging
 import struct
 
-from .const import CAM_MAGIC, CC_DEST, PacketType
+from .const import CAM_MAGIC, CC_DEST, BinaryCommands, PacketType
 from .types import Channel, DeviceID
 
 logger = logging.getLogger(__name__)
@@ -83,27 +83,26 @@ def xq_bytes_decode(data, shift):
 
 class BinaryCmdPkt(DrwPkt):
     START_CMD = b'\x11\x0a'
+    HEADER_FORMAT = '<2s3H'
 
-    def __init__(self, cmd_idx, command, cmd_payload, ticket, token=b''):
+    def __init__(self, cmd_idx, command, cmd_payload, token):
         super().__init__(0, cmd_idx, None)
         self.command = command
         self.cmd_payload = cmd_payload
-        self.ticket = ticket
         self.token = token
 
     def __str__(self):
-        return f'{self.type.name}({self.drw_str()}): {self.command}, (ticket: {self.ticket.hex()}) [{self.cmd_payload}]'
+        return f'{self.type.name}({self.drw_str()}): {self.command}, (token: {self.token.hex()}) [{self.cmd_payload}]'
 
     def get_drw_payload(self):
         data = struct.pack(
-            '<2s3H',
+            self.HEADER_FORMAT,
             self.START_CMD,
             self.command.value,
-            len(self.cmd_payload) + len(self.ticket) + len(self.token),
+            len(self.cmd_payload) + len(self.token),
             CC_DEST.get(self.command, 0x0),
         )
         data += self.token
-        data += self.ticket
         if self.cmd_payload:
             data += xq_bytes_encode(self.cmd_payload, 4)
         return data
@@ -136,6 +135,28 @@ def parse_drw_pkt(data):
             return JsonCmdPkt(cmd_idx, json.loads(data[12:]), preamble=data[4:8])
         except ValueError:
             logging.warning(f'Failed to parse JSON: {data}')
+    elif data[4:6] == b'\x11\x0a':
+        try:
+            _, command_num, length, dest = struct.unpack(BinaryCmdPkt.HEADER_FORMAT, data[4:12])
+            cmd_bin_payload = data[12:]
+            token = b''
+            if len(cmd_bin_payload) < 4:
+                logging.warning('Binary command payload too short: [%s]', cmd_bin_payload.hex(' '))
+            else:
+                # assume first 4 bytes is token and other part - xq_encoded payload
+                token, cmd_bin_payload = cmd_bin_payload[:4], cmd_bin_payload[4:]
+                if len(cmd_bin_payload):
+                    cmd_bin_payload = xq_bytes_decode(cmd_bin_payload, 4)
+            pkt = BinaryCmdPkt(
+                cmd_idx=cmd_idx,
+                command=BinaryCommands(command_num),
+                token=token,
+                cmd_payload=cmd_bin_payload,
+            )
+            logger.debug('Parsed binary command: %s, raw=[%s]', pkt, data.hex(" "))
+            return pkt
+        except ValueError:
+            logging.warning(f'Failed to parse binary command: {data}')
     return DrwPkt(channel, cmd_idx, data[4:])
 
 
