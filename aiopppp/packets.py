@@ -85,10 +85,12 @@ class BinaryCmdPkt(DrwPkt):
     START_CMD = b'\x11\x0a'
     HEADER_FORMAT = '<2s3H'
 
-    def __init__(self, cmd_idx, command, cmd_payload, token):
+    def __init__(self, cmd_idx, command, cmd_payload, token=b'\x00\x00\x00\x00'):
         super().__init__(0, cmd_idx, None)
         self.command = command
         self.cmd_payload = cmd_payload
+        # don't know what is token, but it comes in the beginning of the payload
+        # for BATE camera it is always 0x00000000
         self.token = token
 
     def __str__(self):
@@ -139,7 +141,7 @@ def parse_drw_pkt(data):
         try:
             _, command_num, length, dest = struct.unpack(BinaryCmdPkt.HEADER_FORMAT, data[4:12])
             cmd_bin_payload = data[12:]
-            token = b''
+            token = b'\x00\x00\x00\x00'
             if len(cmd_bin_payload) < 4:
                 logging.warning('Binary command payload too short: [%s]', cmd_bin_payload.hex(' '))
             else:

@@ -596,11 +596,12 @@ class BinarySession(Session):
 
     async def handle_incoming_command_packet(self, drw_pkt):
         if isinstance(drw_pkt, BinaryCmdPkt):
-            if drw_pkt.command == BinaryCommands.ConnectUserAck:
-                self.ticket = drw_pkt.token
+            if drw_pkt.command == BinaryCommands.ConnectUserAck and len(drw_pkt.cmd_payload) >= 20:
+                # this is from cam-reverse code
+                self.ticket = drw_pkt.cmd_payload[16:20]
             logger.debug(
-                'handle_incoming_command_packet: ticket=%s, %s data=%s',
-                self.ticket,
+                'handle_incoming_command_packet: token=%s, %s data=%s',
+                drw_pkt.token.hex(),
                 drw_pkt.command,
                 drw_pkt.cmd_payload.hex(' '),
             )
