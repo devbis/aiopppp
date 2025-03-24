@@ -60,15 +60,19 @@ class Device:
             on_device_lost=lambda dev: self.on_device_lost(),
         )
         self._session.start()
+        session_tasks = self._session.running_tasks()
         done, _ = await asyncio.wait(
             [
                 asyncio.ensure_future(self._session.device_is_ready.wait()),
-                asyncio.shield(self._session.main_task),
+                *[asyncio.shield(t) for t in session_tasks],
             ], timeout=timeout,
             return_when=asyncio.FIRST_COMPLETED,
         )
-        if self._session and self._session.main_task and self._session.main_task.done():
-            await self._session.main_task
+        if self._session:
+            # if exception in session tasks due to packets processing, raise it here
+            done_tasks = [t for t in session_tasks if t.done()]
+            if done_tasks:
+                await asyncio.gather(*done_tasks)
         if not done:  # timeout
             if self.is_connected:
                 await self.close()

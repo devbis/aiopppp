@@ -155,7 +155,18 @@ class Session(PacketQueueMixin, VideoQueueMixin):
         logger.debug(f"recv< {pkt.type}, len={len(pkt.get_payload())}")
         self.packet_queue.put_nowait(pkt)
 
+    async def call_with_error_check(self, coro):
+        try:
+            return await coro
+        finally:
+            done_tasks = [t for t in self.running_tasks() if t.done()]
+            if done_tasks:
+                await asyncio.gather(*done_tasks)
+
     async def send(self, pkt):
+        await self.call_with_error_check(self._send(pkt))
+
+    async def _send(self, pkt):
         logger.debug(f"send> {pkt}")
         if pkt.type == PacketType.Drw:
             self.drw_waiters[pkt._cmd_idx] = asyncio.Future()
@@ -231,6 +242,9 @@ class Session(PacketQueueMixin, VideoQueueMixin):
             del self.drw_waiters[cmd_idx_ack]
 
     async def wait_ack(self, idx, timeout=5):
+        return await self.call_with_error_check(self._wait_ack(idx, timeout))
+
+    async def _wait_ack(self, idx, timeout=5):
         fut = self.drw_waiters.get(idx)
         if fut:
             logger.debug(f'Waiting for ACK for {idx}')
@@ -250,8 +264,6 @@ class Session(PacketQueueMixin, VideoQueueMixin):
 
     async def _run(self):
         self.transport = await self.create_udp()
-        self.start_packet_queue()
-        self.start_video_queue()
 
         # send punch packet
         await self.send(make_punch_pkt(self.dev.dev_id))
@@ -286,8 +298,13 @@ class Session(PacketQueueMixin, VideoQueueMixin):
 
     def start(self):
         self.device_is_ready.clear()
+        self.start_packet_queue()
+        self.start_video_queue()
         self.main_task = asyncio.create_task(self._run())
         return self.main_task
+
+    def running_tasks(self):
+        return tuple(x for x in (self.main_task, self.process_packet_task, self.process_video_task) if x)
 
     def _on_device_lost(self):
         logger.warning('Device %s lost', self.dev.dev_id)
@@ -406,6 +423,9 @@ class JsonSession(Session):
                 del self.cmd_waiters[response['cmd']]
 
     async def wait_cmd_result(self, cmd, timeout=5):
+        return await self.call_with_error_check(self._wait_cmd_result(cmd, timeout))
+
+    async def _wait_cmd_result(self, cmd, timeout=5):
         fut = self.cmd_waiters.get(cmd.value)
         if fut:
             res = await asyncio.wait_for(fut, timeout=timeout)
