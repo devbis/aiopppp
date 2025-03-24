@@ -7,8 +7,8 @@ capturing snapshots, or configuring camera settings, all using asyncio for effic
 
 ## Features
 
-- Initial camera discovery (plain (not implemented yet), and encoded)
-- Asynchronous peer-to-peer connections with PPPP-enabled cameras using JSON control protocol
+- Initial camera discovery (plain and encoded (not all keys))
+- Asynchronous peer-to-peer connections with PPPP-enabled cameras using both JSON and binary control protocols
 - Stream live video feeds directly from the camera.
 - Remote camera rotation
 - (TBD) Capture snapshots and save them locally.
@@ -129,7 +129,7 @@ To test the library, you can run a simple web server that streams the camera fee
 The server will automatically discover the camera and start streaming the video feed.
 
 ```bash
-python -m aiopppp
+python -m aiopppp -u admin -p 6666
 ```
 
 Then, visit `http://localhost:4000` in your browser to view the camera feed.
@@ -137,8 +137,10 @@ Then, visit `http://localhost:4000` in your browser to view the camera feed.
 ## Troubleshooting
 
 If you encounter issues:
-1. Verify that your camera supports the PPPP protocol with JSON commands. The tested camera had prefix DGOK.
-2. Check your camera in the same subnet as the machine with the script running.
+1. Verify that your camera supports the PPPP protocol. The tested cameras had prefix DGOK, BATE. 
+    Little Stars app is not supported yet, as it uses a different protocol with ports 8070, 8080.
+2. Check credential for the camera. Use -u and -p flags to specify username and password.
+3. Check your camera in the same subnet as the machine with the script running.
 
 ## Contributing
 
