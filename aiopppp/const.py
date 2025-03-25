@@ -47,6 +47,7 @@ class BinaryCommands(Enum):
     Reboot = 0x1110  # CMD_SYSTEM_REBOOT
     VideoParamSet = 0x1830  # CMD_PEER_VIDEOPARAM_SET
     VideoParamSetAck = 0x1831
+    VideoParamSetAck2 = 0x1131  # ??? BATF-* sends it
     VideoParamGet = 0x1930  # CMD_PEER_VIDEOPARAM_GET
     IRToggle = 0x0a30  # CMD_PEER_IRCUT_ONOFF
 
