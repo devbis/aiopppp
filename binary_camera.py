@@ -84,7 +84,7 @@ class BinaryCamera:
             if len(data) > 4:
                 data = xq_bytes_decode(data, 4)
 
-            if cmd_id == aiopppp.const.BinaryCommands.ConnectUser:
+            if cmd_id == aiopppp.const.BinaryCommands.CMD_SYSTEM_USER_CHK:
                 INCORRECT_USER_RESP = '11 0a 20 11 0c 00 ff 00 00 00 00 00 57 56 6c 37 fe 01 01 01'
                 CORRECT_USER_RESP = '11 0a 20 11 04 00 ff 00 0e fc ff ff'
 
@@ -96,26 +96,26 @@ class BinaryCamera:
 
                 print('... BinaryCommand: cmd_id:', cmd_id, 'data:', data)
                 await asyncio.sleep(0.3)
-                print('... send ConnectUserAck')
+                print('... send ACK_SYSTEM_USER_CHK')
                 self.output.put_nowait((bytes(
                     DrwPkt(cmd_idx=0, channel=0, drw_payload=bytes.fromhex(resp)),
                 ), self.client_addr))
                 # self.output.put_nowait((bytes(BinaryCmdPkt(
                 #     cmd_idx=self.cmd_idx,
-                #     command=aiopppp.const.BinaryCommands.ConnectUserAck,
+                #     command=aiopppp.const.BinaryCommands.ACK_SYSTEM_USER_CHK,
                 #     ticket=self.ticket,
                 #     cmd_payload=b'\xff\x00\x00\x00',
                 # )), self.client_addr))
                 self.cmd_idx += 1
-            elif cmd_id == aiopppp.const.BinaryCommands.DevStatus:
+            elif cmd_id == aiopppp.const.BinaryCommands.CMD_SYSTEM_STATUS_GET:
                 await asyncio.sleep(0.3)
-                print('... send DevStatusAck')
+                print('... send ACK_SYSTEM_STATUS_GET')
                 self.output.put_nowait(
                     (
                         bytes(
                             BinaryCmdPkt(
                                 cmd_idx=self.cmd_idx,
-                                command=aiopppp.const.BinaryCommands.DevStatusAck,
+                                command=aiopppp.const.BinaryCommands.ACK_SYSTEM_STATUS_GET,
                                 # token=b'\x0a\xfc\xff\xff',
                                 token=b"\x00\x00\x00\x00",
                                 # cmd_payload=bytes(range(0x15)),

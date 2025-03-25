@@ -542,11 +542,11 @@ class BinarySession(Session):
     DEFAULT_LOGIN = 'admin'
     DEFAULT_PASSWORD = 'admin'
     ACKS = {
-        BinaryCommands.ConnectUser: BinaryCommands.ConnectUserAck,
-        BinaryCommands.VideoParamSet: BinaryCommands.VideoParamSetAck,
-        BinaryCommands.StartVideo: BinaryCommands.StartVideoAck,
-        BinaryCommands.StopVideo: BinaryCommands.StartVideoAck,
-        BinaryCommands.DevStatus: BinaryCommands.DevStatusAck,
+        BinaryCommands.CMD_SYSTEM_USER_CHK: BinaryCommands.ACK_SYSTEM_USER_CHK,
+        BinaryCommands.CMD_PEER_VIDEOPARAM_SET: BinaryCommands.ACK_PEER_VIDEOPARAM_SET,
+        BinaryCommands.CMD_PEER_LIVEVIDEO_START: BinaryCommands.ACK_PEER_LIVEVIDEO_START,
+        BinaryCommands.CMD_PEER_LIVEVIDEO_STOP: BinaryCommands.ACK_PEER_LIVEVIDEO_STOP,
+        BinaryCommands.CMD_SYSTEM_STATUS_GET: BinaryCommands.ACK_SYSTEM_STATUS_GET,
     }
     REV_ACKS = {v: k for k, v in ACKS.items()}
 
@@ -596,7 +596,7 @@ class BinarySession(Session):
 
     async def handle_incoming_command_packet(self, drw_pkt):
         if isinstance(drw_pkt, BinaryCmdPkt):
-            if drw_pkt.command == BinaryCommands.ConnectUserAck and len(drw_pkt.cmd_payload) >= 20:
+            if drw_pkt.command == BinaryCommands.ACK_SYSTEM_USER_CHK and len(drw_pkt.cmd_payload) >= 20:
                 # this is from cam-reverse code
                 self.ticket = drw_pkt.cmd_payload[16:20]
             logger.debug(
@@ -673,15 +673,15 @@ class BinarySession(Session):
 
         if mode:
             for video_param in video_params:
-                await self.send_command(BinaryCommands.VideoParamSet, video_param, with_response=True)
-            await self.send_command(BinaryCommands.StartVideo, b'', with_response=True)
+                await self.send_command(BinaryCommands.CMD_PEER_VIDEOPARAM_SET, video_param, with_response=True)
+            await self.send_command(BinaryCommands.CMD_PEER_LIVEVIDEO_START, b'', with_response=True)
         else:
-            await self.send_command(BinaryCommands.StopVideo, b'', with_response=True)
+            await self.send_command(BinaryCommands.CMD_PEER_LIVEVIDEO_STOP, b'', with_response=True)
 
     async def login(self):
         # type is char account[0x20]; char password[0x80];
         payload = struct.pack('>32s128s', self.auth_login.encode('utf-8'), self.auth_password.encode('utf-8'))
-        return await self.send_command(BinaryCommands.ConnectUser, payload, with_response=True)
+        return await self.send_command(BinaryCommands.CMD_SYSTEM_USER_CHK, payload, with_response=True)
 
     @staticmethod
     def _parse_dev_status(data):
@@ -719,15 +719,15 @@ class BinarySession(Session):
     async def setup_device(self):
         idx = await self.login()
         await self.wait_ack(idx)
-        auth_result = await self.wait_cmd_result(BinaryCommands.ConnectUser)
+        auth_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_USER_CHK)
         logger.debug(f"Connect user responded with {auth_result=}")
         if auth_result != b'':
             # logger.warning('Connect user failed ????')
             raise AuthError(f'Login failed: [{auth_result.hex(" ")}]')
 
-        await self.send_command(BinaryCommands.DevStatus, b'', with_response=True)
+        await self.send_command(BinaryCommands.CMD_SYSTEM_STATUS_GET, b'', with_response=True)
         await self.wait_ack(idx)
-        status_result = await self.wait_cmd_result(BinaryCommands.DevStatus)
+        status_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_STATUS_GET)
         self.dev_properties = {**self._parse_dev_status(status_result), 'raw': status_result.hex(' ')}
         logger.info('Camera properties: %s', self.dev_properties)
         self.device_is_ready.set()
@@ -736,7 +736,7 @@ class BinarySession(Session):
         await super().loop_step()
 
     async def reboot(self, **kwargs):
-        await self.send_command(BinaryCommands.Reboot, b'')
+        await self.send_command(BinaryCommands.CMD_SYSTEM_REBOOT, b'')
 
     async def reset(self, **kwargs):
         pass
