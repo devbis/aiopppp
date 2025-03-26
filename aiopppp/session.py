@@ -19,7 +19,7 @@ from .packets import (
     parse_packet,
     pack_passtrough_cmd,
 )
-from .types import Channel, DeviceDescriptor, VideoFrame
+from .types import Channel, DeviceDescriptor, Encryption, VideoFrame
 from .utils import DebounceEvent
 
 logger = logging.getLogger(__name__)
@@ -773,6 +773,23 @@ class BinarySession(Session):
         return pack_passtrough_cmd(BinaryCommands.CMD_PTZ_SET.value, data)
 
 
+class LittleStarsSession(JsonSession):
+    DEFAULT_PASSWORD = 'admin'
+
+    async def setup_device(self):
+        # No setup
+        self.device_is_ready.set()
+
+    async def _request_video(self, mode):
+        # TODO: hit ports to start video
+        # https://github.com/DEEFRAG/A9/blob/main/a9.py
+        # size = sock.sendto(struct.pack(">BB", 0x30, 0x67), (self.dev.addr, 8070))
+        # size += sock.sendto(struct.pack(">BB", 0x30, 0x66), (self.dev.addr, 8070))
+        # size += sock.sendto(struct.pack(">BB", 0x42, 0x76), (self.dev.addr, 8080))
+        # return size == 6
+        raise NotImplementedError()
+
+
 class SharedFrameBuffer:
     def __init__(self):
         self.condition = asyncio.Condition()
@@ -792,5 +809,10 @@ class SharedFrameBuffer:
 def make_session(device: DeviceDescriptor, on_device_lost: Callable[[DeviceDescriptor], None],
                  login: str = '', password: str = '') -> Session:
     """Create a session for the camera."""
-    session_class = JsonSession if device.is_json else BinarySession
+    if not device.is_json:
+        session_class = BinarySession
+    elif device.encryption == Encryption.LITTLE_STARS:
+        session_class = LittleStarsSession
+    else:
+        session_class = JsonSession
     return session_class(device, on_disconnect=on_device_lost, login=login, password=password)
