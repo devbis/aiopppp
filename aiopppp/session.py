@@ -540,7 +540,7 @@ class JsonSession(Session):
 
 class BinarySession(Session):
     DEFAULT_LOGIN = 'admin'
-    DEFAULT_PASSWORD = 'admin'
+    DEFAULT_PASSWORD = '6666'
     ACKS = {
         BinaryCommands.CMD_SYSTEM_USER_CHK: BinaryCommands.ACK_SYSTEM_USER_CHK,
         BinaryCommands.CMD_PEER_VIDEOPARAM_SET: BinaryCommands.ACK_PEER_VIDEOPARAM_SET,
@@ -681,7 +681,19 @@ class BinarySession(Session):
     async def login(self):
         # type is char account[0x20]; char password[0x80];
         payload = struct.pack('>32s128s', self.auth_login.encode('utf-8'), self.auth_password.encode('utf-8'))
-        return await self.send_command(BinaryCommands.CMD_SYSTEM_USER_CHK, payload, with_response=True)
+        idx = await self.send_command(BinaryCommands.CMD_SYSTEM_USER_CHK, payload, with_response=True)
+        await self.wait_ack(idx)
+        auth_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_USER_CHK)
+        logger.debug(f"Connect user responded with {auth_result=}")
+        if auth_result != b'':
+            raise AuthError(f'Login failed: [{auth_result.hex(" ")}]')
+        return True
+
+    async def get_status(self):
+        idx = await self.send_command(BinaryCommands.CMD_SYSTEM_STATUS_GET, b'', with_response=True)
+        await self.wait_ack(idx)
+        status_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_STATUS_GET)
+        return {**self._parse_dev_status(status_result), 'raw': status_result.hex(' ')}
 
     @staticmethod
     def _parse_dev_status(data):
@@ -717,18 +729,8 @@ class BinarySession(Session):
         }
 
     async def setup_device(self):
-        idx = await self.login()
-        await self.wait_ack(idx)
-        auth_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_USER_CHK)
-        logger.debug(f"Connect user responded with {auth_result=}")
-        if auth_result != b'':
-            # logger.warning('Connect user failed ????')
-            raise AuthError(f'Login failed: [{auth_result.hex(" ")}]')
-
-        await self.send_command(BinaryCommands.CMD_SYSTEM_STATUS_GET, b'', with_response=True)
-        await self.wait_ack(idx)
-        status_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_STATUS_GET)
-        self.dev_properties = {**self._parse_dev_status(status_result), 'raw': status_result.hex(' ')}
+        await self.login()
+        self.dev_properties = await self.get_status()
         logger.info('Camera properties: %s', self.dev_properties)
         self.device_is_ready.set()
 
