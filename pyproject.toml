@@ -7,7 +7,8 @@ dynamic = ["version"]
 name = "aiopppp"
 description = "An asynchronous Python library for connecting to PPPP-enabled cameras."
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "Apache-2.0"
+license-files = ["LICEN[CS]E*"]
 authors = [
     {name = "Ivan Belokobylskiy", email = "belokobylskij@gmail.com"}
 ]
@@ -24,7 +25,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
