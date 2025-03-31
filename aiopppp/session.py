@@ -10,7 +10,9 @@ from .encrypt import ENC_METHODS
 from .exceptions import AuthError, CommandResultError
 from .packets import (
     BinaryCmdPkt,
+    DrwPkt,
     JsonCmdPkt,
+    Packet,
     make_close_pkt,
     make_drw_ack_pkt,
     make_p2palive_ack_pkt,
@@ -777,17 +779,60 @@ class LittleStarsSession(JsonSession):
     DEFAULT_PASSWORD = 'admin'
 
     async def setup_device(self):
-        # No setup
+        local_sock = self.transport._sock.getsockname()
+        local_address_chunks = [int(x) for x in local_sock[0].split('.')]
+        local_port = local_sock[1]
+        punch_to_payload = struct.pack(
+            "<BBH4BQ",
+            0,
+            2,
+            local_port,
+            *reversed(local_address_chunks),
+            0,
+        )
+        punchto_pkt = Packet(PacketType.PunchTo, punch_to_payload)
+        await self.send(punchto_pkt)
+        self._p2p_rdy_debouncer.clear()
+        await self.send(make_punch_pkt(self.dev.dev_id))
+        # b'\xf1\xd0\x00S\xd1\x00\x00\x00\x01\n\x00\x00G\x00\x00\x00'
+        # b'GET /check_user.cgi?loginuse=admin&loginpas=admin&user=admin&pwd=admin&'
+        try:
+            await asyncio.wait_for(self._p2p_rdy_debouncer.wait(), timeout=10)
+        except asyncio.TimeoutError:
+            logger.warning('Waiting for a set of p2p took too long')
+
+        pkt_idx = self.outgoing_command_idx
+        self.outgoing_command_idx += 1
+        http_cmd = (
+            f'GET /check_user.cgi?loginuse={self.auth_login}&loginpas={self.auth_password}&'
+            f'user={self.auth_login}&pwd={self.auth_password}&'
+        )
+        magic_start = b'\x01\n\x00\x00'
+        pkt = DrwPkt(
+            channel=Channel.Command,
+            cmd_idx=pkt_idx,
+            drw_payload=(
+                magic_start + len(http_cmd).to_bytes(2, 'little') + b'\x00\x00' + http_cmd.encode()
+            ),
+        )
+        await self.send(pkt)
+        await self.wait_ack(pkt_idx)
+
+        await asyncio.sleep(1)
+        # wait for
+        # b'\xf1\xd0\x00\x18\xd1\x00\x00\x00\x01\n\xa0`\x0c\x00\x00\x01result= 0;\r\n'
+
         self.device_is_ready.set()
 
-    async def _request_video(self, mode):
-        # TODO: hit ports to start video
-        # https://github.com/DEEFRAG/A9/blob/main/a9.py
-        # size = sock.sendto(struct.pack(">BB", 0x30, 0x67), (self.dev.addr, 8070))
-        # size += sock.sendto(struct.pack(">BB", 0x30, 0x66), (self.dev.addr, 8070))
-        # size += sock.sendto(struct.pack(">BB", 0x42, 0x76), (self.dev.addr, 8080))
-        # return size == 6
-        raise NotImplementedError()
+    # async def _request_video(self, mode):
+    #     logger.info('Requesting video (NOT IMPLEMENTED!!!)', mode)
+    #     # TODO: hit ports to start video
+    #     # https://github.com/DEEFRAG/A9/blob/main/a9.py
+    #     # size = sock.sendto(struct.pack(">BB", 0x30, 0x67), (self.dev.addr, 8070))
+    #     # size += sock.sendto(struct.pack(">BB", 0x30, 0x66), (self.dev.addr, 8070))
+    #     # size += sock.sendto(struct.pack(">BB", 0x42, 0x76), (self.dev.addr, 8080))
+    #     # return size == 6
+    #     # raise NotImplementedError()
 
 
 class SharedFrameBuffer:
