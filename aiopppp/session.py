@@ -5,7 +5,7 @@ import struct
 from enum import Enum
 from typing import Callable
 
-from .const import JSON_COMMAND_NAMES, PTZ, BinaryCommands, JsonCommands, PacketType
+from .const import JSON_COMMAND_NAMES, PTZ, BinaryCommands, JsonCommands, PacketType, PtzDirection, PtzParamType
 from .encrypt import ENC_METHODS
 from .exceptions import AuthError, CommandResultError
 from .packets import (
@@ -17,6 +17,7 @@ from .packets import (
     make_p2palive_pkt,
     make_punch_pkt,
     parse_packet,
+    pack_passtrough_cmd,
 )
 from .types import Channel, DeviceDescriptor, VideoFrame
 from .utils import DebounceEvent
@@ -612,7 +613,7 @@ class BinarySession(Session):
                 if waiter:
                     waiter.set_result(drw_pkt.cmd_payload)
 
-    async def send_command(self, cmd, cmd_payload, *, with_response=False, **kwargs):
+    async def send_command(self, cmd, cmd_payload=b'', *, with_response=False, **kwargs):
         pkt_idx = self.outgoing_command_idx
         self.outgoing_command_idx += 1
         pkt = BinaryCmdPkt(
@@ -738,30 +739,38 @@ class BinarySession(Session):
         await super().loop_step()
 
     async def reboot(self, **kwargs):
-        await self.send_command(BinaryCommands.CMD_SYSTEM_REBOOT, b'')
+        await self.send_command(BinaryCommands.CMD_SYSTEM_REBOOT)
 
     async def reset(self, **kwargs):
         pass
 
     async def toggle_whitelight(self, value, **kwargs):
-        pass
+        await self.send_command(BinaryCommands.CMD_PEER_LIGHTFILL_ONOFF)
 
     async def toggle_ir(self, value, **kwargs):
-        pass
+        await self.send_command(BinaryCommands.CMD_PEER_IRCUT_ONOFF)
 
     async def toggle_lamp(self, value, **kwargs):
         pass
 
     async def rotate_start(self, value, **kwargs):
-        pass
+        ptz = PtzDirection[f'PTZ_DIRECTION_{value.upper()}'].value
+        data = self._pack_ptz_dir_cmd(ptz)
+        await self.send_command(BinaryCommands.CMD_PASSTHROUGH_STRING_PUT, data)
 
     async def rotate_stop(self, **kwargs):
-        pass
+        data = self._pack_ptz_dir_cmd(PtzDirection.PTZ_DIRECTION_STOP)
+        await self.send_command(BinaryCommands.CMD_PASSTHROUGH_STRING_PUT, data)
 
     async def step_rotate(self, value, **kwargs):
         await self.rotate_start(value)
-        # await asyncio.sleep(0.2)
+        await asyncio.sleep(0.2)
         await self.rotate_stop()
+
+    @staticmethod
+    def _pack_ptz_dir_cmd(ptz: PtzDirection) -> bytes:
+        data = struct.pack('>III', PtzParamType.PTZ_PARAM_TYPE_DIRECTION, ptz, 0)
+        return pack_passtrough_cmd(BinaryCommands.CMD_PTZ_SET.value, data)
 
 
 class SharedFrameBuffer:

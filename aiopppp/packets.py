@@ -109,6 +109,15 @@ class BinaryCmdPkt(DrwPkt):
             data += xq_bytes_encode(self.cmd_payload, 4)
         return data
 
+def pack_passtrough_cmd(command, data):
+    START_CMD = 0x010A
+    HEADER_FORMAT = '>4H4x' # Four 2-byte unsigned shorts, and 4 bytes padding (4x)
+    CMD_DEST = 0xFFFF
+    SHORT_MASK = 0xFFFF
+
+    header = struct.pack(HEADER_FORMAT, START_CMD, command & SHORT_MASK, (len(data) + 4) & SHORT_MASK, CMD_DEST)
+    length = struct.pack('<I', len(header) + len(data))
+    return length + header + data
 
 def parse_punch_pkt(data):
     return PunchPkt(PacketType.PunchPkt, data)
