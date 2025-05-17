@@ -75,6 +75,7 @@ class VideoQueueMixin:
         self.video_received = {}
         self.video_boundaries = set()
         self.last_video_frame = -1
+        self.last_audio_frame = -1
 
     async def process_video_queue(self):
         while True:
@@ -109,13 +110,14 @@ class VideoQueueMixin:
 
     async def handle_incoming_audio_packet(self, pkt_epoch, pkt):
         audio_payload = pkt.get_drw_payload()
-
         audio_marker = b'\x55\xaa\x15\xa8'
+
         if audio_payload.startswith(audio_marker):
             actual_payload = audio_payload[0x20:]
         else:
             actual_payload = audio_payload
 
+        # open('/tmp/test.raw', 'ab').write(decode(actual_payload))
         open('/tmp/test.raw', 'ab').write(actual_payload)
 
     async def process_video_frame(self):
