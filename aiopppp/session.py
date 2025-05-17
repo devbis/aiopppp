@@ -5,7 +5,6 @@ import struct
 from enum import Enum
 from typing import Callable
 
-from .adpcm import decode
 from .const import JSON_COMMAND_NAMES, PTZ, BinaryCommands, JsonCommands, PacketType
 from .encrypt import ENC_METHODS
 from .exceptions import AuthError, CommandResultError
@@ -117,7 +116,7 @@ class VideoQueueMixin:
         else:
             actual_payload = audio_payload
 
-        # open('/tmp/test.raw', 'ab').write(decode(actual_payload))
+        # Guess is now: a-law 8000Hz
         open('/tmp/test.raw', 'ab').write(actual_payload)
 
     async def process_video_frame(self):
