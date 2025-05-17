@@ -80,6 +80,18 @@ def xq_bytes_decode(data, shift):
     new_buf = bytes(b - 1 if b & 1 else b + 1 for b in data)
     return bytes(new_buf[-shift:] + new_buf[:-shift])
 
+def inet_btoa(b: bytes) -> str:
+    """
+    Convert IP Address from byte array to a dot-separated string.
+    
+    """
+    return '.'.join(str(x) for x in b)
+
+def get_dev_version(b: bytes) -> str:
+    """
+    Convert 4-byte version number to a string.
+    """
+    return '.'.join(str(x) for x in reversed(b))
 
 class BinaryCmdPkt(DrwPkt):
     START_CMD = b'\x11\x0a'
