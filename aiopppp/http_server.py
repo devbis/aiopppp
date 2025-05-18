@@ -24,8 +24,8 @@ async def index(request):
     '''
     videos = '<hr/>'.join(
         f'<h2>{x}</h2><img src=\"/{x}/v\"/><br/>'
-        f'<button onClick="sendCommand(\'{x}\', \'toggle-lamp\', {{value: 1}})">ON</button>'
-        f'<button onClick="sendCommand(\'{x}\', \'toggle-lamp\', {{value: 0}})">OFF</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'toggle-lamp\', {{value: 1}})">Light ON</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'toggle-lamp\', {{value: 0}})">Light OFF</button>'
         f'<button onClick="sendCommand(\'{x}\', \'toggle-ir\', {{value: 1}})">IR ON</button>'
         f'<button onClick="sendCommand(\'{x}\', \'toggle-ir\', {{value: 0}})">IR OFF</button>'
         '<br>'
@@ -37,6 +37,41 @@ async def index(request):
         '<br>'
         f'<button onClick="sendCommand(\'{x}\', \'start-video\', {{}})">Start Video</button>'
         f'<button onClick="sendCommand(\'{x}\', \'stop-video\', {{}})">Stop Video</button>'
+        ' Resolution: '
+        f'<select onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'resolution\', value: this.value}})">'
+            '<option>QVGA</option>'
+            '<option>VGA</option>'
+            '<option>HD</option>'
+            '<option>FD</option>'
+            '<option>UD</option>'
+        '</select>'
+        ' Rotate: '
+        f'<select onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'rotate\', value: this.value}})">'
+            '<option>NORMAL</option>'
+            '<option>H</option>'
+            '<option>V</option>'
+            '<option>HV</option>'
+        '</select>'
+        '<br>'
+        ' Brightness: '
+        f'<input type="range" min="0" max="100" onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'brightness\', value: +this.value}})")>'
+        'Contrast: '        
+        f'<input type="range" min="0" max="100" onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'contrast\', value: +this.value}})")>'
+        ' Saturation: '
+        f'<input type="range" min="0" max="100" onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'saturation\', value: +this.value}})")>'
+        ' Sharpness: '
+        f'<input type="range" min="0" max="100" onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'sharpness\', value: +this.value}})")>'
+        'Framerate: '
+        f'<input type="range" min="0" max="100" onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'framerate\', value: +this.value}})")>'
+        ' Bitrate: '
+        f'<input type="range" min="0" max="100" onChange="sendCommand(\'{x}\', \'set-video-param\', {{name: \'bitrate\', value: +this.value}})")>'
+        '<br>'
+        f'<button onClick="sendCommand(\'{x}\', \'set-video-param\', {{name: \'osd\', value: 1}})">OSD ON</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'set-video-param\', {{name: \'osd\', value: 0}})">OSD OFF</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'set-video-param\', {{name: \'movedetection\', value: 1}})">Move Detect ON</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'set-video-param\', {{name: \'movedetection\', value: 0}})">Move Detect OFF</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'set-video-param\', {{name: \'ircut\', value: 1}})">IR ON</button>'
+        f'<button onClick="sendCommand(\'{x}\', \'set-video-param\', {{name: \'ircut\', value: 0}})">IR OFF</button>'
         '<br>'
         f'<button onClick="sendCommand(\'{x}\', \'reboot\', {{}})">Reboot</button>'
         for x in SESSIONS.keys())
@@ -68,6 +103,7 @@ async def handle_commands(request):
         'reboot': session.reboot,
         'start-video': session.start_video,
         'stop-video': session.stop_video,
+        'set-video-param': session.set_video_param,
         # 'reset': session.reset,
     }.get(cmd)
 

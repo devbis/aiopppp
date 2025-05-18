@@ -5,7 +5,7 @@ import struct
 from enum import Enum
 from typing import Callable
 
-from .const import JSON_COMMAND_NAMES, PTZ, BinaryCommands, JsonCommands, PacketType, PtzDirection, PtzParamType
+from .const import JSON_COMMAND_NAMES, PTZ, BinaryCommands, JsonCommands, PacketType, PtzDirection, PtzParamType, VideoParamType, VideoResolution, VideoRotate
 from .encrypt import ENC_METHODS
 from .exceptions import AuthError, CommandResultError
 from .packets import (
@@ -348,6 +348,8 @@ class Session(PacketQueueMixin, VideoQueueMixin):
     async def reboot(self):
         raise NotImplementedError
 
+    async def set_video_param(self, name, value):
+        raise NotImplementedError
 
 class JsonSession(Session):
     """
@@ -679,6 +681,16 @@ class BinarySession(Session):
             await self.send_command(BinaryCommands.CMD_PEER_LIVEVIDEO_START, b'', with_response=True)
         else:
             await self.send_command(BinaryCommands.CMD_PEER_LIVEVIDEO_STOP, b'', with_response=True)
+
+    def _build_video_param(self, param_type, value):
+        param = VideoParamType[f'VIDEO_PARAM_TYPE_{param_type.upper()}'].value
+        if isinstance(value, str):
+            value = globals()[f'Video{param_type.capitalize()}'][f'VIDEO_{param_type.upper()}_{value.upper()}'].value
+        return struct.pack('<II', param, value)
+
+    async def set_video_param(self, name, value):
+        payload = self._build_video_param(name, value)
+        await self.send_command(BinaryCommands.CMD_PEER_VIDEOPARAM_SET, payload, with_response=True)
 
     async def login(self):
         # type is char account[0x20]; char password[0x80];
