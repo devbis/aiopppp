@@ -18,8 +18,7 @@ from .packets import (
     make_punch_pkt,
     parse_packet,
     pack_passtrough_cmd,
-    inet_btoa, 
-    get_dev_version,
+    parse_dev_status,
 )
 from .types import Channel, DeviceDescriptor, VideoFrame
 from .utils import DebounceEvent
@@ -696,81 +695,7 @@ class BinarySession(Session):
         idx = await self.send_command(BinaryCommands.CMD_SYSTEM_STATUS_GET, b'', with_response=True)
         await self.wait_ack(idx)
         status_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_STATUS_GET)
-        return {**self._parse_dev_status(status_result), 'raw': status_result.hex(' ')}
-
-    @staticmethod
-    def _parse_dev_status(data):
-        """
-        Example data (len=124):
-
-        "0d 02 01 3d 74 0f 00 00 00 00 00 00 ff ff ff ff bf ff ff ff "
-        "01 01 00 30 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
-        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
-        "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "
-        "00 00 00 00 00 00 00 00 00 01 00 00 02 00 00 00 00 00 00 00 "
-        "00 00 00 00 00 ff ff ff 00 00 00 00 ff ff ff ff 00 00 00 00 "
-        "00 00 00 00"
-
-        Values are unknown so data below is something that looks similar according to the value ranges.
-
-        """
-
-        logger.debug('Parse dev status [%s]', data.hex(' '))
-
-        if len(data) >= 124:
-            (
-                sw_ver,              # 0-3 (4 bytes)
-                bat_level,           # 4-7 (int)
-                time_zone,           # 8-11 (int)
-                rec_nmb,             # 12-15 (int)
-                sys_uptime,          # 16-19 (int)
-                power_supply,        # 20-23 (int)
-                dev_name,            # 24-87 (64 bytes)
-                sd_status,           # 88 (1 byte)
-                p2p_status,          # 89 (1 byte)
-                conn_type,           # 90 (1 byte)
-                rec_enable_on_start, # 91 (1 byte)
-                pic_enable_on_start, # 92 (1 byte)
-                ir_cut,              # 93 (1 byte)
-                osd_enable,          # 94 (1 byte)
-                alarm_enable,        # 95 (1 byte)
-                mode,                # 96 (1 byte)
-                dhcp,                # 97 (1 byte)
-                mac,                 # 98-103 (6 bytes)
-                ip_addr_bytes,       # 104-107 (4 bytes)
-                netmask_bytes,       # 108-111 (4 bytes)
-                pic_nmb,             # 112-115 (int)
-                total_size,          # 116-119 (int)
-                used_size            # 120-123 (int)
-            ) = struct.unpack('<4s5I64s10B6s4s4s3I', data[:124])
-
-        return {
-            'tz': f"UTC{time_zone // 3600:+d}", #time zone is in seconds
-            'uptime': sys_uptime,
-            'dbm': sys_uptime, #not sure if that is wifi dbm or system uptime
-            'devName': dev_name.decode('ascii', errors='ignore').rstrip('\0'),
-            'sdStatus': sd_status,
-            'p2pStatus': p2p_status,
-            'connType': conn_type,
-            'osdEnable': osd_enable,
-            'alarmEnable': alarm_enable,
-            'mode': mode,
-            'recEnableOnStart': rec_enable_on_start,
-            'picEnableOnStart': pic_enable_on_start,
-            'recNmb': rec_nmb,
-            'picNmb': pic_nmb,
-            'totalSize': total_size,
-            'usedSize': used_size,
-            'powerSupply': power_supply,
-            'batLevel': bat_level,
-            'dhcp': dhcp,
-            'ipAddr': inet_btoa(ip_addr_bytes),
-            'netmask': inet_btoa(netmask_bytes),
-            'mac':mac.hex(':'),
-            'mcuver': get_dev_version(sw_ver),
-            'icut': ir_cut,
-            'lamp': 0, # lamp is not in the status
-        }
+        return {**parse_dev_status(status_result), 'raw': status_result.hex(' ')}
 
     async def setup_device(self):
         await self.login()
