@@ -446,6 +446,7 @@ class PtzPrefab(IntEnum):
     PTZ_PREFAB_DEL = 4
     PTZ_PREFAB_INT = 5
 
+# Seems that only Resolution and Bitrate are supported
 class VideoParamType(IntEnum):
     VIDEO_PARAM_TYPE_DEFAULT = 0
     VIDEO_PARAM_TYPE_RESOLUTION = 1
@@ -465,6 +466,7 @@ class VideoParamType(IntEnum):
     VIDEO_PARAM_TYPE_SCENE_COOL = 92
     VIDEO_PARAM_TYPE_SCENE_BLACKLIGHT = 93
 
+# HD and up may not be supported on most devices
 class VideoResolution(IntEnum):
     VIDEO_RESOLUTION_QVGA = 0
     VIDEO_RESOLUTION_VGA = 1
