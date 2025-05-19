@@ -291,7 +291,7 @@ class Session(PacketQueueMixin, VideoQueueMixin):
 
         try:
             await asyncio.wait_for(self._p2p_rdy_debouncer.wait(), timeout=10)
-            logger.info('Connected to %s, json=%s', self.dev.dev_id, self.dev.is_json)
+            logger.info('Connected to %s at %s, json=%s', self.dev.dev_id, self.dev.addr, self.dev.is_json)
             self.state = State.CONNECTED
             try:
                 await self.setup_device()
