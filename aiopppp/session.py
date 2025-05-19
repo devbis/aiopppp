@@ -643,33 +643,37 @@ class BinarySession(Session):
         pairs = {
             # 320 x 240
             1: [
-                [0x1, 0x0],
-                # [0x7, 0x20],
+                [VideoParamType.VIDEO_PARAM_TYPE_RESOLUTION, VideoResolution.VIDEO_RESOLUTION_QVGA],
+                # [VideoParamType.VIDEO_PARAM_TYPE_BITRATE, 0x20],
             ],
             # 640x480
             2: [
-                [0x1, 0x2],
-                # [0x7, 0x50],
+                [VideoParamType.VIDEO_PARAM_TYPE_RESOLUTION, VideoResolution.VIDEO_RESOLUTION_VGA],
+                # [VideoParamType.VIDEO_PARAM_TYPE_BITRATE, 0x20],
             ],
-            # also 640x480 on the X5 -- hwat now?
+            # 640x480
             3: [
-                [0x1, 0x3],
-                # [0x7, 0x78],
+                [VideoParamType.VIDEO_PARAM_TYPE_RESOLUTION, VideoResolution.VIDEO_RESOLUTION_HD],
+                # [VideoParamType.VIDEO_PARAM_TYPE_BITRATE, 0x50],
             ],
             # also 640x480 on the X5 -- hwat now?
             4: [
-                [0x1, 0x4],
-                # [0x7, 0xa0],
+                [VideoParamType.VIDEO_PARAM_TYPE_RESOLUTION, VideoResolution.VIDEO_RESOLUTION_FD],
+                # [VideoParamType.VIDEO_PARAM_TYPE_BITRATE, 0x78],
             ],
-            # maybe the 0x7 = bitrate??
+            # also 640x480 on the X5 -- hwat now?
+            5: [
+                [VideoParamType.VIDEO_PARAM_TYPE_RESOLUTION, VideoResolution.VIDEO_RESOLUTION_UD],
+                # [VideoParamType.VIDEO_PARAM_TYPE_BITRATE, 0xa0],
+            ],
         }
-        return [struct.pack('<LL', *x) for x in pairs[mode]]
+        return [BinarySession._build_video_param(*x) for x in pairs[mode]]
 
     async def _request_video(self, mode):
         logger.info('Request video %s', mode)
 
         if mode == 1:
-            video_params = self._get_video_params(2)
+            video_params = self._get_video_params(3)
         elif mode == 2:
             video_params = self._get_video_params(1)
         else:
@@ -682,10 +686,16 @@ class BinarySession(Session):
         else:
             await self.send_command(BinaryCommands.CMD_PEER_LIVEVIDEO_STOP, b'', with_response=True)
 
-    def _build_video_param(self, param_type, value):
-        param = VideoParamType[f'VIDEO_PARAM_TYPE_{param_type.upper()}'].value
+    @staticmethod
+    def _build_video_param(param_type, value):
+        if isinstance(param_type, VideoParamType):
+            param = param_type
+        else:
+            param = VideoParamType[f'VIDEO_PARAM_TYPE_{param_type.upper()}'].value
+
         if isinstance(value, str):
             value = globals()[f'Video{param_type.capitalize()}'][f'VIDEO_{param_type.upper()}_{value.upper()}'].value
+
         return struct.pack('<II', param, value)
 
     async def set_video_param(self, name, value):
