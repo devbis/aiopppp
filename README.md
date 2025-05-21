@@ -15,6 +15,25 @@ capturing snapshots, or configuring camera settings, all using asyncio for effic
 - (TBD) Configure and manage camera settings.
 - Lightweight and easy to integrate into Python applications.
 
+## Tested Devices
+
+| Prefix   | Protocol | Video | [Audio<sup>*</sup>](https://github.com/devbis/aiopppp/issues/6) | PTZ | White Light | IR Light | Reboot | Resolution |
+|:---------|:---------|:-----:|:---------------------------------------------------------------:|:---:|:-----------:|:--------:|:------:|:----------:|
+| **DGOK** | 📜 JSON  | ✅   | ✖️                                                             | ✅  | ✅          | ✅      | ✅     | ✖️        |
+| **PTZA** | 🔢 Binary| ✅   | ✖️                                                             | ✅  | ✅          | 🚫      | ❌     | ✅        |
+| **FTYC** | 🔢 Binary| [❌<sup>*</sup>](https://github.com/devbis/aiopppp/issues/8)| ✖️      | 🚫  | 🚫          | ✅      | ❌     | ✅        |
+| [**BATE**<sup>*</sup>](https://github.com/devbis/pppp_camera/issues/4) | 🔢 Binary|❔ |✖️    | ❔   | ❔           | ❔       | ❔     |  ❔        |
+| [**DGB**<sup>*</sup>](https://github.com/devbis/pppp_camera/issues/2) | 📜 JSON   |⚠️ |✖️   | ❔   | ❔           | ❔       | ❔     |  ❔        |
+| [**ACCQ**<sup>*</sup>](https://github.com/devbis/pppp_camera/issues/1) | ❔ Unknown|✖️|✖️    | ✖️  | ✖️          | ✖️      | ✖️     | ✖️        |
+
+**Legend:**
+- &nbsp;✅&nbsp; **Working**: Feature is fully functional.
+- &thinsp;⚠️&thinsp;**Partially working**: Feature works with limitations or issues.
+- &nbsp;❌&nbsp; **Not working**: Feature is implemented but does not function.
+- &nbsp;✖️&nbsp; **Not implemented**: Feature is not implemented in the system.
+- &nbsp;🚫&nbsp; **Not supported**: Feature is not supported by the device.
+- &ensp;❔ &nbsp; **Not tested**: Feature has not been tested on the device.
+
 ## Installation
 
 To install the library, run:
