@@ -5,7 +5,17 @@ import struct
 from enum import Enum
 from typing import Callable
 
-from .const import JSON_COMMAND_NAMES, PTZ, BinaryCommands, JsonCommands, PacketType, PtzDirection, PtzParamType, VideoParamType, VideoResolution, VideoRotate
+from .const import (
+    JSON_COMMAND_NAMES,
+    PTZ,
+    BinaryCommands,
+    JsonCommands,
+    PacketType,
+    PtzDirection,
+    PtzParamType,
+    VideoParamType,
+    VideoResolution,
+)
 from .encrypt import ENC_METHODS
 from .exceptions import AuthError, CommandResultError
 from .packets import (
@@ -16,9 +26,9 @@ from .packets import (
     make_p2palive_ack_pkt,
     make_p2palive_pkt,
     make_punch_pkt,
-    parse_packet,
     pack_passtrough_cmd,
     parse_dev_status,
+    parse_packet,
 )
 from .types import Channel, DeviceDescriptor, VideoFrame
 from .utils import DebounceEvent
