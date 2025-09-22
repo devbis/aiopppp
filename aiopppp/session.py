@@ -397,7 +397,12 @@ class JsonSession(Session):
         return pkt_idx
 
     async def login(self):
-        return await self.send_command(JsonCommands.CMD_CHECK_USER, with_response=True)
+        idx = await self.send_command(JsonCommands.CMD_CHECK_USER, with_response=True)
+        await self.wait_ack(idx)
+        auth_result = await self.wait_cmd_result(JsonCommands.CMD_CHECK_USER)
+        if auth_result['result'] != 0:
+            raise AuthError(f'Login failed: {auth_result}')
+        return True
 
     async def _request_video(self, mode):
         logger.info('Request video %s', mode)
@@ -455,11 +460,7 @@ class JsonSession(Session):
         return {'result': -1}
 
     async def setup_device(self):
-        idx = await self.login()
-        await self.wait_ack(idx)
-        auth_result = await self.wait_cmd_result(JsonCommands.CMD_CHECK_USER)
-        if auth_result['result'] != 0:
-            raise AuthError(f'Login failed: {auth_result}')
+        auth = await self.login()
         idx = await self.send_command(JsonCommands.CMD_GET_PARMS, with_response=True)
         # logger.debug('Waiting for params ack')
         await self.wait_ack(idx)
@@ -485,6 +486,7 @@ class JsonSession(Session):
         for f in ('cmd', 'result'):
             del cam_properties[f]
         self.dev_properties = cam_properties
+        self.dev_properties['auth'] = auth
         logger.info('Camera properties: %s', cam_properties)
         self.device_is_ready.set()
 
@@ -554,7 +556,7 @@ class JsonSession(Session):
 
 class BinarySession(Session):
     DEFAULT_LOGIN = 'admin'
-    DEFAULT_PASSWORD = '6666'
+    DEFAULT_PASSWORD = 'admin' #'6666'
     ACKS = {
         BinaryCommands.CMD_SYSTEM_USER_CHK: BinaryCommands.ACK_SYSTEM_USER_CHK,
         BinaryCommands.CMD_PEER_VIDEOPARAM_SET: BinaryCommands.ACK_PEER_VIDEOPARAM_SET,
@@ -610,14 +612,16 @@ class BinarySession(Session):
 
     async def handle_incoming_command_packet(self, drw_pkt):
         if isinstance(drw_pkt, BinaryCmdPkt):
-            if drw_pkt.command == BinaryCommands.ACK_SYSTEM_USER_CHK and len(drw_pkt.cmd_payload) >= 20:
+            if drw_pkt.command == BinaryCommands.ACK_SYSTEM_USER_CHK and len(drw_pkt.cmd_payload) > 0:
                 # this is from cam-reverse code
-                self.ticket = drw_pkt.cmd_payload[16:20]
-            logger.debug(
-                'handle_incoming_command_packet: token=%s, %s data=%s',
+                self.ticket = drw_pkt.cmd_payload[4:8]
+            logger.warning(
+                'handle_incoming_command_packet: token=%s, ticket=%s, %s data=%s (%s)',
                 drw_pkt.token.hex(),
+                self.ticket.hex(),
                 drw_pkt.command,
                 drw_pkt.cmd_payload.hex(' '),
+                len(drw_pkt.cmd_payload)
             )
 
             if drw_pkt.command in self.REV_ACKS:
@@ -719,8 +723,11 @@ class BinarySession(Session):
         await self.wait_ack(idx)
         auth_result = await self.wait_cmd_result(BinaryCommands.CMD_SYSTEM_USER_CHK)
         logger.debug(f"Connect user responded with {auth_result=}")
-        if auth_result != b'':
-            raise AuthError(f'Login failed: [{auth_result.hex(" ")}]')
+        if auth_result == b'':
+            #some functions of the camera (like video and ptz) may be available even without login
+            #raise AuthError(f'Login failed: [{auth_result.hex(" ")}]')
+            logger.error(f'Login failed: [{auth_result.hex(" ")}]')
+            return False
         return True
 
     async def get_status(self):
@@ -730,8 +737,9 @@ class BinarySession(Session):
         return {**parse_dev_status(status_result), 'raw': status_result.hex(' ')}
 
     async def setup_device(self):
-        await self.login()
+        auth = await self.login()
         self.dev_properties = await self.get_status()
+        self.dev_properties['auth'] = auth
         logger.info('Camera properties: %s', self.dev_properties)
         self.device_is_ready.set()
 
