@@ -20,8 +20,8 @@ capturing snapshots, or configuring camera settings, all using asyncio for effic
 | Prefix   | Protocol | Video | [Audio<sup>*</sup>](https://github.com/devbis/aiopppp/issues/6) | PTZ | White Light | IR Light | Reboot | Resolution |
 |:---------|:---------|:-----:|:---------------------------------------------------------------:|:---:|:-----------:|:--------:|:------:|:----------:|
 | **DGOK** | 📜 JSON  | ✅   | ✖️                                                             | ✅  | ✅          | ✅      | ✅     | ✖️        |
-| **PTZA** | 🔢 Binary| ✅   | ✖️                                                             | ✅  | ✅          | 🚫      | ❌     | ✅        |
-| **FTYC** | 🔢 Binary| [❌<sup>*</sup>](https://github.com/devbis/aiopppp/issues/8)| ✖️      | 🚫  | 🚫          | ✅      | ❌     | ✅        |
+| **PTZA** | 🔢 Binary| ✅   | ✖️                                                             | ✅  | ✅          | 🚫      | ✅     | ✅        |
+| **FTYC** | 🔢 Binary| [❌<sup>*</sup>](https://github.com/devbis/aiopppp/issues/8)| ✖️      | 🚫  | 🚫          | ✅      | ✅     | ✅        |
 | [**BATE**<sup>*</sup>](https://github.com/devbis/pppp_camera/issues/4) | 🔢 Binary|❔ |✖️    | ❔   | ❔           | ❔       | ❔     |  ❔        |
 | [**DGB**<sup>*</sup>](https://github.com/devbis/pppp_camera/issues/2) | 📜 JSON   |⚠️ |✖️   | ❔   | ❔           | ❔       | ❔     |  ❔        |
 | [**ACCQ**<sup>*</sup>](https://github.com/devbis/pppp_camera/issues/1) | ❔ Unknown|✖️|✖️    | ✖️  | ✖️          | ✖️      | ✖️     | ✖️        |
@@ -156,7 +156,7 @@ Then, visit `http://localhost:4000` in your browser to view the camera feed.
 ## Troubleshooting
 
 If you encounter issues:
-1. Verify that your camera supports the PPPP protocol. The tested cameras had prefix DGOK, BATE. 
+1. Verify that your camera supports the PPPP protocol. The tested cameras had prefix DGOK, BATE, PTZA, FTYC, ... 
     Little Stars app is not supported yet, as it uses a different protocol with ports 8070, 8080.
 2. Check credential for the camera. Use -u and -p flags to specify username and password.
 3. Check your camera in the same subnet as the machine with the script running.
