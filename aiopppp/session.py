@@ -615,7 +615,7 @@ class BinarySession(Session):
             if drw_pkt.command == BinaryCommands.ACK_SYSTEM_USER_CHK and len(drw_pkt.cmd_payload) > 0:
                 # this is from cam-reverse code
                 self.ticket = drw_pkt.cmd_payload[4:8]
-            logger.warning(
+            logger.debug(
                 'handle_incoming_command_packet: token=%s, ticket=%s, %s data=%s (%s)',
                 drw_pkt.token.hex(),
                 self.ticket.hex(),
