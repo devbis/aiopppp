@@ -1,10 +1,13 @@
 import asyncio
 import contextlib
+import logging
 
 from .discover import Discovery
 from .exceptions import AlreadyConnectedError, NotConnectedError
 from .session import Session, make_session
 from .types import DeviceDescriptor
+
+logger = logging.getLogger(__name__)
 
 
 async def find_device(ip_address: str, timeout: int = 20) -> DeviceDescriptor:
@@ -32,24 +35,39 @@ async def find_device(ip_address: str, timeout: int = 20) -> DeviceDescriptor:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        if cam_device_fut.done():
-            return cam_device_fut.result()
-        raise TimeoutError("Timeout connecting to the camera")
+
+    if cam_device_fut.done():
+        return cam_device_fut.result()
+    raise TimeoutError("Timeout connecting to the camera")
 
 
 class Device:
-    def __init__(self, ip_address: str, username: str = '', password: str = ''):
+    def __init__(self, ip_address: str, username: str = '', password: str = '',
+                 on_video_state_change=None):
         self.ip_address = ip_address
         self.descriptor: DeviceDescriptor | None = None
         self.properties: dict = {}
         self._session: Session | None = None
         self.username = username
         self.password = password
+        # Optional callback(is_streaming: bool) forwarded to the session, fired
+        # whenever video streaming starts or stops.
+        self.on_video_state_change = on_video_state_change
         self.enable_reconnect = False
+        # Auto-reconnect bookkeeping.
+        self._reconnect_task = None
+        self._closing = False
+        # Whether the caller wants video, so a reconnect can resume streaming.
+        self._want_video = False
+        # Backoff bounds for reconnect attempts (seconds).
+        self.reconnect_min_delay = 1
+        self.reconnect_max_delay = 30
 
     async def connect(self, timeout: int = 15):
         if self.is_connected:
             raise AlreadyConnectedError("Already connected to the camera")
+        # Allow reuse of a Device that was previously close()d.
+        self._closing = False
 
         self.descriptor = await find_device(self.ip_address, timeout=timeout)
 
@@ -58,6 +76,7 @@ class Device:
             login=self.username,
             password=self.password,
             on_device_lost=lambda dev: self.on_device_lost(),
+            on_video_state_change=self.on_video_state_change,
         )
         self._session.start()
         session_tasks = self._session.running_tasks()
@@ -102,10 +121,34 @@ class Device:
     def on_device_lost(self):
         # session is closed here
         self._session = None
-        if self.enable_reconnect:
-            # TODO
-            pass
-            # await self.find_device(timeout=timeout)
+        if self.enable_reconnect and not self._closing:
+            if self._reconnect_task is None or self._reconnect_task.done():
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    return
+                self._reconnect_task = loop.create_task(self._reconnect_loop())
+
+    async def _reconnect_loop(self):
+        """Re-establish the session after an unexpected loss, with exponential
+        backoff, resuming video if it was streaming."""
+        delay = self.reconnect_min_delay
+        while self.enable_reconnect and not self._closing and not self.is_connected:
+            try:
+                await asyncio.sleep(delay)
+                if self._closing:
+                    return
+                await self.connect()
+                logger.info('Reconnected to %s', self.ip_address)
+                if self._want_video:
+                    await self.start_video()
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                logger.debug('Reconnect to %s failed (%s); retrying in %ss',
+                             self.ip_address, err, delay)
+                delay = min(delay * 2, self.reconnect_max_delay)
 
     @property
     def is_connected(self):
@@ -118,6 +161,14 @@ class Device:
         return self._session
 
     async def close(self):
+        # Stop any in-flight reconnect first so it can't race a deliberate close.
+        self._closing = True
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._reconnect_task
+        self._reconnect_task = None
+
         if self._session:
             await self._session.send_close_pkt()
             sess = self._session
@@ -142,9 +193,11 @@ class Device:
         return self.session.is_video_requested
 
     async def start_video(self):
+        self._want_video = True
         return await self.session.start_video()
 
     async def stop_video(self):
+        self._want_video = False
         return await self.session.stop_video()
 
     async def get_video_frame(self):

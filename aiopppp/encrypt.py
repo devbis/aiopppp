@@ -19,25 +19,34 @@ XOR1_KEY_TABLE = [
 
 XOR1_ENC_KEY = (0x69, 0x97, 0xcc, 0x19)
 
+# Keystream byte as a function of the previous *ciphertext* byte. The original
+# code recomputed `(XOR1_ENC_KEY[prev & 3] + prev) & 0xff` per byte; precompute
+# it once as a 256-entry table that doubles as a bytes.translate() map.
+XOR1_KEYSTREAM = bytes(
+    XOR1_KEY_TABLE[(XOR1_ENC_KEY[prev & 0x03] + prev) & 0xff] for prev in range(256)
+)
+
 
 def xor1_decode(data):
-    prev_byte = 0
-    buf = bytearray([0] * len(data))
-    for i in range(len(data)):
-        index = (XOR1_ENC_KEY[prev_byte & 0x03] + prev_byte) & 0xff
-        orig_byte = data[i]
-        buf[i] = orig_byte ^ XOR1_KEY_TABLE[index]
-        prev_byte = orig_byte
-    return bytes(buf)
+    # The keystream at position i depends only on the previous ciphertext byte,
+    # and for decode every ciphertext byte is the input — so the keystream is
+    # fully determined up front. data[0] uses prev_byte = 0.
+    n = len(data)
+    if not n:
+        return b''
+    keystream = XOR1_KEYSTREAM[0:1] + data[:-1].translate(XOR1_KEYSTREAM)
+    return (int.from_bytes(data, 'big') ^ int.from_bytes(keystream, 'big')).to_bytes(n, 'big')
 
 
 def xor1_encode(data):
+    # Encode is inherently sequential (each keystream byte depends on the byte
+    # just produced), but it only runs on small outgoing packets, not video.
+    buf = bytearray(len(data))
     prev_byte = 0
-    buf = bytearray([0] * len(data))
-    for i in range(len(data)):
-        index = (XOR1_ENC_KEY[prev_byte & 0x03] + prev_byte) & 0xff
-        buf[i] = data[i] ^ XOR1_KEY_TABLE[index]
-        prev_byte = buf[i]
+    keystream = XOR1_KEYSTREAM
+    for i, b in enumerate(data):
+        prev_byte = b ^ keystream[prev_byte]
+        buf[i] = prev_byte
     return bytes(buf)
 
 

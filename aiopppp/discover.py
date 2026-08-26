@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from random import randint
+import struct
 
 from .const import CAM_MAGIC, PacketType
 from .encrypt import ENC_METHODS
@@ -45,8 +45,17 @@ class Discovery:
 
     @staticmethod
     def get_possible_discovery_packets():
-        unencrypted = Packet(PacketType.LanSearch, b'')
-        return [x[1](bytes(unencrypted)) for x in ENC_METHODS.values()]
+        # Broadcast both the plain LanSearch (0x30) and the extended
+        # LanSearchExt (0x32). Some cameras/firmwares only answer the extended
+        # variant (the vendor apps send both), so sending just LanSearch left
+        # those devices undiscoverable. Each type is emitted once per known
+        # transport encryption.
+        packets = []
+        for pkt_type in (PacketType.LanSearch, PacketType.LanSearchExt):
+            raw = bytes(Packet(pkt_type, b''))
+            for _decode, encode in ENC_METHODS.values():
+                packets.append(encode(raw))
+        return packets
 
     @staticmethod
     def maybe_decode(data):
@@ -65,7 +74,13 @@ class Discovery:
         except ValueError:
             return
 
-        pkt = parse_packet(decoded)
+        try:
+            pkt = parse_packet(decoded)
+        except (ValueError, struct.error, IndexError):
+            # A stray/corrupt datagram on the discovery socket must not abort
+            # on_receive; drop it and keep listening.
+            logger.debug('Dropping undecodable discovery datagram from %s', addr)
+            return
         logger.debug(f"Received {pkt} from {addr}")
 
         if pkt.type == PacketType.PunchPkt:
@@ -83,9 +98,15 @@ class Discovery:
     async def discover(self, callback, period=10):
         assert period >= 1, 'need to wait for camera response more than 1 second'
         logger.info('Start discovery on %s:%d', self.remote_addr, self.remote_port)
-        initial_port = self.local_port or randint(0x800, 0xfff0)
 
-        self.transport = await create_udp_server(initial_port, lambda data, addr: self.on_receive(data, addr, callback))
+        # Bind to the requested local port, or 0 to let the OS pick a free one.
+        # A hard-coded random port could land in an OS-reserved range and fail
+        # to bind (e.g. WinError 10013 on Windows); port 0 always succeeds.
+        self.transport = await create_udp_server(
+            self.local_port, lambda data, addr: self.on_receive(data, addr, callback),
+        )
+        bound_port = self.transport.get_extra_info('sockname')[1]
+        logger.info('Discovery listening on local UDP port %d', bound_port)
         possible_discovery_packets = self.get_possible_discovery_packets()
         try:
             while True:

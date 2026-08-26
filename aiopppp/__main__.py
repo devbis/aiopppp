@@ -18,25 +18,39 @@ new_device_fut = None
 def get_new_device_fut():
     return new_device_fut
 
+
+def notify_new_device():
+    # The future is recreated on every main-loop iteration and is None before
+    # the loop starts, so guard against missing/already-resolved futures.
+    fut = get_new_device_fut()
+    if fut is not None and not fut.done():
+        fut.set_result(None)
+
+
 def on_device_found(device, login, password):
+    dev_id = device.dev_id.dev_id
+    if dev_id in SESSIONS:
+        # Discovery re-finds already-connected cameras every cycle; creating a
+        # new session here would leak the previous one's running tasks.
+        return
     session = make_session(device, on_device_lost=on_device_lost, login=login, password=password)
-    SESSIONS[device.dev_id.dev_id] = session
+    SESSIONS[dev_id] = session
     session.start()
-    tasks[device.dev_id.dev_id] = session.running_tasks()
-    get_new_device_fut().set_result(None)
+    tasks[dev_id] = session.running_tasks()
+    notify_new_device()
 
 
 def on_device_lost(device):
     logger.warning('Device %s lost', device.dev_id)
     SESSIONS.pop(device.dev_id.dev_id, None)
     tasks.pop(device.dev_id.dev_id, None)
-    get_new_device_fut().set_result(None)
+    notify_new_device()
 
 
 async def amain(remote_addr, local_port, username, password):
     global discovery
     global new_device_fut
-    discovery = Discovery(remote_addr=remote_addr)
+    discovery = Discovery(remote_addr=remote_addr, local_port=local_port)
 
     discovery_task = asyncio.create_task(discovery.discover(lambda d: on_device_found(d, username, password)))
     webserver_task = asyncio.create_task(start_web_server())

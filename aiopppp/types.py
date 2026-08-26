@@ -51,3 +51,10 @@ class VideoFrame:
     def __init__(self, idx, data):
         self.idx = idx
         self.data = data
+
+
+class AudioFrame:
+    def __init__(self, idx, data, sample_rate=8000):
+        self.idx = idx
+        self.data = data  # signed 16-bit little-endian PCM
+        self.sample_rate = sample_rate

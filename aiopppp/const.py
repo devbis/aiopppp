@@ -1,4 +1,4 @@
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, IntFlag
 
 CAM_MAGIC = 0xf1
 
@@ -28,21 +28,21 @@ class PacketType(Enum):
     RlyHelloAck2 = 0x71  # if len >1??
 
 
-class BinaryCommands(Enum):
+class DevCfgId(IntEnum):
+    """Config-section identifiers used by the DFTCFG import/export commands.
+
+    These are section selectors carried inside a config command's payload, not
+    command opcodes, and they reuse the 0x0000-0x0019 range that the ACK status
+    codes also occupy. Keeping them in their own enum prevents value aliasing
+    that would make BinaryCommands(value) ambiguous.
+    """
     CFGID_VERSION = 0x0000
-    CMD_ACK_OK = 0x0000
     CFGID_LANGUAGE = 0x0001
-    CMD_ACK_UNAUTH = 0x0001
     CFGID_PRODUCTE = 0x0002
-    CMD_ACK_NO_PRIVILEGE = 0x0002
     CFGID_UPGRADE = 0x0003
-    CMD_ACK_INVALID_PARAM = 0x0003
     CFGID_P2P = 0x0004
-    CMD_ACK_CMDEXCUTE_FAILED = 0x0004
     CFGID_TZ = 0x0005
-    CMD_ACK_NONE_RESULT = 0x0005
     CFGID_USER = 0x0006
-    CMD_ACK_UNKNOWN = 0x0006
     CFGID_OPR = 0x0007
     CFGID_SERIAL = 0x0008
     CFGID_WIRED = 0x0009
@@ -62,9 +62,25 @@ class BinaryCommands(Enum):
     CFGID_FTP = 0x0017
     CFGID_PUSH = 0x0018
     CFGID_WLANPMK = 0x0019
+
+
+class AckCode(IntEnum):
+    """Result/status codes returned in an ACK payload (not command opcodes)."""
+    CMD_ACK_OK = 0x0000
+    CMD_ACK_UNAUTH = 0x0001
+    CMD_ACK_NO_PRIVILEGE = 0x0002
+    CMD_ACK_INVALID_PARAM = 0x0003
+    CMD_ACK_CMDEXCUTE_FAILED = 0x0004
+    CMD_ACK_NONE_RESULT = 0x0005
+    CMD_ACK_UNKNOWN = 0x0006
+    CMD_ACK_ILLIGAL = 0x03E8
+
+
+class BinaryCommands(Enum):
+    # Protocol-level markers: a DRW command frame is tagged BINCMD (255) or
+    # CGICMD (254) to select the binary vs the CGI command vocabulary.
     CGICMD = 0x00FE
     BINCMD = 0x00FF
-    CMD_ACK_ILLIGAL = 0x03E8
     CMD_DEV_BROADCAST = 0x0EFF
     CMD_SYSTEM_DFTCFG_IMPORT = 0x1000
     CMD_SYSTEM_DFTCFG_EXPORT = 0x1001
@@ -234,16 +250,46 @@ class BinaryCommands(Enum):
     CMD_PASSTHROUGH_STRING_PUT = 0x50FF
     ACK_PASSTHROUGH_STRING_PUT = 0x51FF
     CMD_SESSION_CHECK = 0x55FE
-    CB_IEGET_STATUS = 0x6001
     CMD_NET_WIFISETTING_SET = 0x6001
-    CB_IEGET_PARAM = 0x6002
     CMD_NET_WIFISETTING_GET = 0x6002
-    CB_IEGET_CAM_PARAMS = 0x6003
     CMD_NET_WIFI_SCAN = 0x6003
-    CB_IEGET_LOG = 0x6004
     CMD_NET_WIREDSETTING_SET = 0x6004
-    CB_IEGET_MISC = 0x6005
     CMD_NET_WIREDSETTING_GET = 0x6005
+    ACK_NET_WIFISETTING_SET = 0x6101
+    ACK_NET_WIFISETTING_GET = 0x6102
+    ACK_NET_WIFI_SCAN = 0x6103
+    ACK_NET_WIREDSETTING_SET = 0x6104
+    ACK_NET_WIREDSETTING_GET = 0x6105
+    CMD_FRIEND_MSG = 0x7000
+    CMD_LOCAL_SESSION_INF = 0xF000
+    CMD_LOCAL_SESSION_CHECK = 0xF001
+    CMD_LOCAL_SESSION_GET = 0xF002
+    CMD_LOCAL_SESSION_CTRL = 0xF003
+    CMD_LOCAL_REC_START = 0xF004
+    CMD_LOCAL_REC_STOP = 0xF005
+    CMD_LOCAL_REC_MERGECTRL = 0xF006
+    CMD_LOCAL_P2P_START = 0xF007
+    CMD_LOCAL_P2P_STOP = 0xF008
+    CMD_SESSION_CLOSE = 0xF00F
+    CMD_LOCAL_PUSH_STRING = 0xF010
+    CMD_LOCAL_PUSH_CFG = 0xF011
+    CMD_LOCAL_RCVVID_DEC = 0xF012
+    CMD_LOCAL_LAPSED = 0xF021
+
+
+class CgiCommands(IntEnum):
+    """The alternate CGI command vocabulary (selected by the CGICMD marker).
+
+    Some A9/XD firmwares answer on these CB_* opcodes instead of the
+    BinaryCommands (BINCMD) set. They occupy an overlapping numeric range --
+    e.g. 0x6001-0x6005 collide with CMD_NET_* -- so they must live in their own
+    enum to keep value-based lookups unambiguous.
+    """
+    CB_IEGET_STATUS = 0x6001
+    CB_IEGET_PARAM = 0x6002
+    CB_IEGET_CAM_PARAMS = 0x6003
+    CB_IEGET_LOG = 0x6004
+    CB_IEGET_MISC = 0x6005
     CB_IEGET_RECORD = 0x6006
     CB_IEGET_RECORD_FILE = 0x6007
     CB_IEGET_WIFI_SCAN = 0x6008
@@ -299,29 +345,9 @@ class BinaryCommands(Enum):
     CB_APP_VERSION = 0x6054
     CB_CHECK_USER = 0x60A0
     CB_IESET_BILL = 0x60A1
-    ACK_NET_WIFISETTING_SET = 0x6101
-    ACK_NET_WIFISETTING_GET = 0x6102
-    ACK_NET_WIFI_SCAN = 0x6103
-    ACK_NET_WIREDSETTING_SET = 0x6104
-    ACK_NET_WIREDSETTING_GET = 0x6105
-    CMD_FRIEND_MSG = 0x7000
     CB_SET_P2PPARAM = 0x99F0
     CB_GET_SYSOPR = 0x99FE
     CB_SET_SYSOPR = 0x99FF
-    CMD_LOCAL_SESSION_INF = 0xF000
-    CMD_LOCAL_SESSION_CHECK = 0xF001
-    CMD_LOCAL_SESSION_GET = 0xF002
-    CMD_LOCAL_SESSION_CTRL = 0xF003
-    CMD_LOCAL_REC_START = 0xF004
-    CMD_LOCAL_REC_STOP = 0xF005
-    CMD_LOCAL_REC_MERGECTRL = 0xF006
-    CMD_LOCAL_P2P_START = 0xF007
-    CMD_LOCAL_P2P_STOP = 0xF008
-    CMD_SESSION_CLOSE = 0xF00F
-    CMD_LOCAL_PUSH_STRING = 0xF010
-    CMD_LOCAL_PUSH_CFG = 0xF011
-    CMD_LOCAL_RCVVID_DEC = 0xF012
-    CMD_LOCAL_LAPSED = 0xF021
     CB_SET_SINGLE_SETTING_DEFAULT = 0xFF01
     CB_GET_FILE = 0xFF10
     CB_PUT_FILE = 0xFF11
@@ -479,3 +505,208 @@ class VideoRotate(IntEnum):
     VIDEO_ROTATE_H = 1
     VIDEO_ROTATE_V = 2
     VIDEO_ROTATE_HV = 3
+
+
+# --------------------------------------------------------------------------
+# Model/capability enums lifted from the vendor apps' own constant classes.
+# They name a raw value; they do not change how anything is decoded, and an
+# unrecognised value yields None rather than a wrong name. Background and
+# per-value evidence: VENDOR_APP_FINDINGS.md.
+# --------------------------------------------------------------------------
+
+class DevType(IntEnum):
+    """`(swVer >> 8) & 0xff`. The app derives this from the firmware version,
+    falling back to the DID prefix (FTZ/PTZ/PIZ -> BK_PTZ, else BK_A9) before
+    the first status reply arrives.
+
+    Both vendor apps ship their own `Constants.DevType` and they DISAGREE.
+    Names below follow FtyCamPro 1.117, which is the superset -- it adds 42,
+    62 and 95, which YsxLite 1.40 lacks. Where the two differ:
+
+        id  FtyCamPro 1.117     YsxLite 1.40
+        0   DEV_BK_UNKNOWN      DEV_MYSELF
+        6   DEV_BK_A9_EXT       DEV_BK_A9_PWRSWITCH_NOSD
+        8   DEV_BK_A9_XD18      DEV_BK_A9_NOCARD1
+        9   DEV_BK_A9_PLUS      DEV_BK_UMS
+
+    Ids 1-5, 7, 10-12, 14-16, 20, 25, 35, 55 and 65 are identical in both.
+
+    Treat the capability-sounding suffixes with care: only YsxLite claims 6 is
+    "PWRSWITCH_NOSD" and 8 is "NOCARD1". What IS corroborated by behaviour is
+    that FtyCamPro hides the battery icon for devType 6, so "externally
+    powered" fits either name.
+
+    Confirmed on hardware: 2 = BK_A9 on a fixed FTYC camera, 15 = XR_PTZ on a
+    pan/tilt PTZA camera.
+    """
+    DEV_BK_UNKNOWN = 0
+    DEV_BK_A9_NOCARD = 1
+    DEV_BK_A9 = 2
+    DEV_BK_XD15 = 3
+    DEV_BK_USB = 4
+    DEV_BK_PTZ = 5
+    DEV_BK_A9_EXT = 6
+    DEV_BK_DCAR = 7
+    DEV_BK_A9_XD18 = 8
+    DEV_BK_A9_PLUS = 9
+    DEV_BK_A9_PWRSWITCH_SD = 10
+    DEV_BK_A9_CGZ = 11
+    DEV_BK_PIZ_BULIT = 12
+    DEV_XR_A9 = 14
+    DEV_XR_PTZ = 15
+    DEV_TX_A9 = 16
+    DEV_BK_LPWR_LPS = 20
+    DEV_BTPTZ_DCAM_BK = 25
+    DEV_BTPTZ_DCAM_TX = 35
+    DEV_TX_8076H19 = 42
+    DEV_TX_PTZ = 55
+    DEV_TX817_DMINI = 62
+    DEV_BKPTZ_DCAM = 65
+    DEV_TX817_YSX_W15 = 95
+
+
+class ChipType(IntEnum):
+    """`(swVer >> 24) & 0xff`, from FtyCamPro's `Constants.ChpType`.
+
+    Single-sourced: YsxLite 1.40 has no ChpType class and no
+    getChpTypeFromDevVer at all, so there is nothing to cross-check against
+    and this list is certainly incomplete -- it names only the TX family.
+
+    FTYC hardware reports 61 (TX_817_810). PTZA reports 2, which is outside
+    this set and so decodes to None. Note the chip family does NOT track the
+    DevType prefix: FTYC is DEV_BK_A9, a "BK" name, on a TX chip.
+    """
+    CHP_UNKNOWN = 0
+    CHP_TX = 60
+    CHP_TX_817_810 = 61
+    CHP_TX_817_H24 = 62
+    CHP_TX_818_C01 = 63
+
+
+class DevSysMode(IntEnum):
+    """`(powerSupply >> 4) & 0x0f`. App labels: "On configuring" / "Normal" /
+    "Low power" (resources dev_sysmode_cfg/nml/lpr)."""
+    SYSMODE_QRCFG = 0
+    SYSMODE_NORMAL = 1
+    SYSMODE_LOWPWR = 2
+
+
+class DevFunc(IntFlag):
+    """`(powerSupply >> 24) & 0xff` -- live state bitmap.
+
+    Bits 0 and 1 are CONFIRMED on FTYC hardware (2026-08-25): toggling IR
+    moved the byte 0x14 -> 0x16 (bit 1) and the light button 0x16 -> 0x17
+    (bit 0), with nothing else in the 124-byte block changing. That also
+    settles the ambiguity between the two vendor activities in favour of
+    LiveDoubleAty -- LiveSingleAty's "bit 0 = OSD" really was a copy-paste
+    slip. Note the light bit follows the *commanded* state: the test camera
+    has no white LED at all and bit 0 still set.
+
+    Bit 2 is NOT confirmed. LiveSingleAty maps it to OSD, but FTYC reports it
+    permanently set while the status block's own osdEnable reads 0, so one of
+    the two is not OSD. Bit 4 is likewise permanently set and unexplained.
+    """
+    FILL_LIGHT = 0x01     # confirmed
+    IR_LED = 0x02         # confirmed
+    OSD = 0x04            # per LiveSingleAty; contradicted by FTYC's osdEnable
+    BIT3 = 0x08
+    BIT4 = 0x10           # always set on FTYC, meaning unknown
+    BIT5 = 0x20
+    BIT6 = 0x40
+    BIT7 = 0x80
+
+
+class SDCardStatus(IntEnum):
+    UNEXIST = 0
+    UNFORMAT = 1
+    BAD_FORMAT = 2
+    DIRTY = 3
+    OK = 4
+    INITIALIZE_FAILED = 5
+    NOT_INITIALIZED = 6
+    RECORDING = 7
+    RECSTOP = 8
+    RECFAILED = 9
+    RW_FAILED = 10
+    TIME_PROBLEM = 11
+    SPACE_INSUFFICIENT = 12
+    OPR_NORESULT = 13
+    OPR_COLLISION = 14
+    FORMATTING = 15
+    RETRYING = 16
+
+
+class WifiMode(IntEnum):
+    """The app's own picker only ever offers these two, and treats mode 0 as
+    station. PTZA reports 1 while joined to an AP, which is outside this set --
+    so either that firmware encodes the field differently or our offset is
+    wrong for it. Unknown values decode to None rather than being guessed."""
+    INFRA = 0
+    AP = 2
+
+
+class WifiType(IntEnum):
+    """Wi-Fi auth type. These labels are the vendor app's own literals
+    (SetWifiAty.getTypeName), so they are the one enum here that is directly
+    attested rather than transcribed."""
+    NONE = 0
+    WEP_OPEN = 1
+    WEP_SHARED = 2
+    WPA = 3
+    WPA2 = 4
+
+
+class LibError(IntEnum):
+    """Result code returned in the 4-byte *token* field of a binary command
+    reply (see `parse_drw_pkt`) -- not in the payload. Negative means refused,
+    and such a reply carries no payload at all.
+
+    Transcribed verbatim from YsxLite 1.40's `LibError`, misspellings included
+    (CMD_EXCUTE_FAILED, INSUFICIENT_RESOURCE, LOCAL_PEMISSION, UNKOWN,
+    FILE_MAX_NMB), so the names stay greppable against the decompiled app.
+
+    Observed on PTZA fw 2.2.15.93 without a login:
+        CMD_SYSTEM_USER_CHK -> -1010 CMD_EXCUTE_FAILED (bad credentials)
+        CMD_SYSTEM_REBOOT   -> -1015 USER_NO_PRIVILEGE
+        CMD_NET_WIFI_SCAN   -> -1010 CMD_EXCUTE_FAILED
+    """
+    OK = 0
+    NOT_READY = 1
+    ERROR_IPC_BASE = -1000
+    NOT_INITIALIZED = -1001
+    ALREADY_INITIALIZED = -1002
+    NOT_STARTED = -1003
+    ALREADY_STARTED = -1004
+    INVALID_PARAMETER = -1005
+    INSUFICIENT_RESOURCE = -1006
+    LOCAL_MAX_SESSION = -1007
+    PEER_MAX_SESSION = -1008
+    ILLEGAL_CMD = -1009
+    CMD_EXCUTE_FAILED = -1010
+    CMD_PARSE = -1011
+    USER_ACC_NONEXIST = -1012
+    USER_PWD_INCORRECT = -1013
+    UNAUTH = -1014
+    USER_NO_PRIVILEGE = -1015
+    INVALID_SESSION = -1016
+    FILE_NOEXIST = -1020
+    FILE_OPEN_FAILED = -1021
+    FILE_MAX_NMB = -1022
+    LOCAL_PEMISSION = -1998
+    UNKOWN = -1999
+
+
+def enum_name(enum_cls, value, prefix=''):
+    """Name for a raw enum value, or None when it isn't in the enum.
+
+    Used to annotate device info without ever hiding the raw number -- several
+    of these enums are incomplete, so an unknown value must stay visible rather
+    than being coerced into the nearest name.
+    """
+    if value is None:
+        return None
+    try:
+        name = enum_cls(value).name
+    except ValueError:
+        return None
+    return name[len(prefix):] if prefix and name.startswith(prefix) else name
